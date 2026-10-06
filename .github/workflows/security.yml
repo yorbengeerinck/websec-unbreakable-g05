@@ -20,15 +20,13 @@ jobs:
           dotnet restore ./app/Unbreakable.csproj
           dotnet list ./app/Unbreakable.csproj package --vulnerable --include-transitive 2>&1 | tee sca.txt
           cat sca.txt
-          # baseline: alleen Newtonsoft.Json 12.0.1 mag
           if grep -q "has the following vulnerable packages" sca.txt; then
-            # haal alle vulnerable regels eruit behalve baseline
             NEW=$(grep -E "High|Critical|Severe" sca.txt | grep -v "Newtonsoft.Json" || true)
             if [ -n "$NEW" ]; then
               echo "NIEUWE KRITIEKE VULN: $NEW"
               exit 1
             else
-              echo "Alleen baseline Newtonsoft.Json 12.0.1 gevonden -> OK, geaccepteerd"
+              echo "Alleen baseline Newtonsoft.Json 12.0.1 -> OK"
             fi
           else
             echo "Geen vulnerable packages -> OK"
@@ -57,4 +55,17 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITLEAKS_CONFIG: .gitleaks.toml
-          # GEEN continue-on-error meer -> nieuwe secret = FAIL
+
+  # Deploy: alleen eigen repo, alleen push naar main, nooit forks/PRs
+  deploy:
+    needs: [sca-dotnet, sast-semgrep, secret-gitleaks]
+    if: github.repository == 'yorbengeerinck/websec-unbreakable-g05' && github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: [self-hosted, linux, g05]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy app
+        run: |
+          docker compose up -d --build
+          sleep 10
+          docker ps
+          curl -f http://localhost:8080/health
