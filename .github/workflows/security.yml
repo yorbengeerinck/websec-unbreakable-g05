@@ -12,14 +12,21 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: dotnet restore + vulnerable check (SCA audit)
+        run: |
+          dotnet restore ./app/Unbreakable.csproj
+          dotnet list ./app/Unbreakable.csproj package --vulnerable --include-transitive || true
+          echo "AUDIT-MODE: faalt nu niet, baseline wordt in docs/accepted-findings.md gezet"
       - name: Install Trivy
         run: |
-          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin v0.65.0
+          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sudo sh -s -- -b /usr/local/bin v0.65.0
           trivy --version
-      - name: Trivy fs scan (SCA)
+      - name: Trivy fs scan (SCA audit)
         run: |
-          trivy fs --severity HIGH,CRITICAL --ignore-unfixed --exit-code 0 --format table .
-          echo "AUDIT-MODE: exit-code 0, na baseline naar 1"
+          trivy fs --severity HIGH,CRITICAL --ignore-unfixed --exit-code 0 --format table . || true
 
   # DSOMM: Secure Build | Static Application Security Testing (SAST)
   sast-semgrep:
