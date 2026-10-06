@@ -7,23 +7,21 @@ on:
     branches: [ main ]
 
 jobs:
-  #DSOMM Patch Management, Dependency vulnerability scanning (SCA)
+  # DSOMM: Patch Management | Dependency vulnerability scanning (SCA)
   sca-trivy:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Install Trivy
+        run: |
+          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin v0.65.0
+          trivy --version
       - name: Trivy fs scan (SCA)
-        uses: aquasecurity/trivy-action@0.33.1
-        with:
-          scan-type: 'fs'
-          scan-ref: '.'
-          format: 'table'
-          severity: 'HIGH,CRITICAL'
-          #AUDIT-MODE eerst op 0, na baseline op 1 zetten
-          exit-code: '0'
-          ignore-unfixed: true
+        run: |
+          trivy fs --severity HIGH,CRITICAL --ignore-unfixed --exit-code 0 --format table .
+          echo "AUDIT-MODE: exit-code 0, na baseline naar 1"
 
-  #DSOMM Secure Build & Static Application Security Testing (SAST)
+  # DSOMM: Secure Build | Static Application Security Testing (SAST)
   sast-semgrep:
     runs-on: ubuntu-latest
     steps:
@@ -32,10 +30,9 @@ jobs:
         uses: returntocorp/semgrep-action@v1
         with:
           config: auto
-          #audit-mode: faalt nu niet, later vervangen door strict fail
         continue-on-error: true
 
-  #DSOMM secrets Management en secret scanning
+  # DSOMM: Secrets Management | Secret scanning
   secret-gitleaks:
     runs-on: ubuntu-latest
     steps:
