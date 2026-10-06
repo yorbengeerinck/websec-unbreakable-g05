@@ -4,6 +4,6 @@ title = "g05 baseline eerste run geaccepteerd"
 useDefault = true
 
 [allowlist]
-description = "Lab demo password in docker-compose.yml, geen prod geheim. Staat achter WAF, wordt later via env/GitHub Secrets gezet. Geaccepteerd voor opdracht 2."
-paths = ["docker-compose.yml"]
-regexes = ["Unbr3akable!2026"]
+description = "Lab demo geheimen: Unbr3akable DB password + fake ubk_live ApiKey in appsettings.json. Geen prod, alleen lab, achter WAF. Geaccepteerd voor opdracht 2."
+paths = ["docker-compose.yml", "app/appsettings.json"]
+regexes = ["Unbr3akable!2026", "ubk_live_.*"]
