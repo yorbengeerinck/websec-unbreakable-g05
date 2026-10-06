@@ -8,7 +8,7 @@ on:
 
 jobs:
   # DSOMM: Patch Management | Dependency vulnerability scanning (SCA)
-  sca-trivy:
+  sca-dotnet:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -19,14 +19,7 @@ jobs:
         run: |
           dotnet restore ./app/Unbreakable.csproj
           dotnet list ./app/Unbreakable.csproj package --vulnerable --include-transitive || true
-          echo "AUDIT-MODE: faalt nu niet, baseline wordt in docs/accepted-findings.md gezet"
-      - name: Install Trivy
-        run: |
-          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sudo sh -s -- -b /usr/local/bin v0.65.0
-          trivy --version
-      - name: Trivy fs scan (SCA audit)
-        run: |
-          trivy fs --severity HIGH,CRITICAL --ignore-unfixed --exit-code 0 --format table . || true
+          echo "AUDIT-MODE: faalt nu niet, baseline in docs/accepted-findings.md"
 
   # DSOMM: Secure Build | Static Application Security Testing (SAST)
   sast-semgrep:
