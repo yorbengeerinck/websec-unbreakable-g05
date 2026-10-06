@@ -1,0 +1,49 @@
+name: security-pipeline
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  #DSOMM Patch Management, Dependency vulnerability scanning (SCA)
+  sca-trivy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Trivy fs scan (SCA)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'table'
+          severity: 'HIGH,CRITICAL'
+          #AUDIT-MODE eerst op 0, na baseline op 1 zetten
+          exit-code: '0'
+          ignore-unfixed: true
+
+  #DSOMM Secure Build & Static Application Security Testing (SAST)
+  sast-semgrep:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Semgrep SAST
+        uses: returntocorp/semgrep-action@v1
+        with:
+          config: auto
+          #audit-mode: faalt nu niet, later vervangen door strict fail
+        continue-on-error: true
+
+  #DSOMM secrets Management en secret scanning
+  secret-gitleaks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Gitleaks scan
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true
