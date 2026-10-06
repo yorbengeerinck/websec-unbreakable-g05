@@ -1,0 +1,6 @@
+title = "g05 baseline eerste run geaccepteerd"
+
+[[allowlist]]
+description = "Lab demo password in docker-compose.yml, geen prod geheim. Staat achter WAF, wordt later via env/GitHub Secrets gezet. Geaccepteerd voor opdracht 2."
+paths = ["docker-compose.yml"]
+regexes = ["Unbr3akable!2026"]
