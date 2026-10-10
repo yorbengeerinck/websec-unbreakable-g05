@@ -2,7 +2,7 @@ name: security-pipeline
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, dev ]
   pull_request:
     branches: [ main ]
 
@@ -37,11 +37,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Semgrep SAST
-        uses: returntocorp/semgrep-action@v1
+
+      - uses: actions/setup-python@v5
         with:
-          config: auto
-        continue-on-error: true
+          python-version: '3.x'
+
+      - name: Install Semgrep
+        run: python -m pip install semgrep
+
+      - name: Semgrep SAST
+        run: semgrep scan --config auto --error
 
   # DSOMM: Secrets Management | Secret scanning
   secret-gitleaks:
