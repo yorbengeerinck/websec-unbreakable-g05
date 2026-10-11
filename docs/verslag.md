@@ -50,6 +50,49 @@ De controles sluiten aan bij de DSOMM-activiteiten voor een veilige build- en on
 - Alle scans en de deploymentjob werken in de definitieve workflow.
 - Link naar een **recente, succesvolle** GitHub Actions-run toevoegen.
 
+### SAST – Detectie en oplossing van een Docker-beveiligingsrisico
+
+Na het implementeren van de nieuwe Semgrep-controle hebben we de security pipeline uitgevoerd op de `dev`-branch.
+
+**1. Detectie**
+
+Semgrep analyseerde de broncode en rapporteerde 14 bevindingen, waaronder één met ernstniveau `ERROR`.
+
+- **Regel:** `dockerfile.security.missing-user-entrypoint`
+- **Bestand:** `app/Dockerfile`
+- **Locatie:** regel 12
+- **Risico:** De applicatie kon standaard met rootrechten binnen de Docker-container draaien.
+
+**2. Automatische blokkering**
+
+Ons Python-script (`scripts/check-semgrep.py`) vergeleek de scanresultaten met de baseline.
+
+Omdat de Docker-bevinding nog niet in de baseline was opgenomen en de ernst `ERROR` had, werd de pipeline automatisch geblokkeerd met exitcode 1.
+
+Hiermee hebben we aangetoond dat de SAST-controle nieuwe ernstige bevindingen kan tegenhouden.
+
+**3. Beveiligingsverbetering**
+
+In `app/Dockerfile` hebben we de volgende instructie toegevoegd:
+
+```dockerfile
+USER $APP_UID
+```
+
+De officiële .NET-containerimage bevat een ingebouwde niet-rootgebruiker. Met deze instructie draait de applicatie onder die gebruiker in plaats van standaard als root.
+
+Dit volgt het *principle of least privilege*: processen krijgen niet meer rechten dan noodzakelijk.
+
+**4. Verwacht resultaat**
+
+Na deze aanpassing verwachten we dat Semgrep de melding `dockerfile.security.missing-user-entrypoint` niet langer rapporteert.
+
+De nieuwe scan en een succesvolle deployment moeten dit nog bevestigen.
+
+**Conclusie**
+
+Deze test toont aan hoe onze security pipeline wordt gebruikt om een beveiligingsrisico te detecteren, een deployment te blokkeren en vervolgens de applicatie te verbeteren voordat de wijziging wordt uitgerold.
+
 ## 3. Automatische deployment (stap 3)
 
 De applicatie is eerder op de server uitgerold via Docker Compose. De workflow gebruikt een self-hosted runner voor groep 05. De deploymentjob is bedoeld om alleen na geslaagde controles en bij een push naar `main` te draaien.
