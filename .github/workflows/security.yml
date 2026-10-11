@@ -51,44 +51,9 @@ jobs:
         run: |
           semgrep scan --config auto --json --output semgrep-results.json --strict
 
+      # Compare scan results against reviewed baseline
       - name: Check new critical findings
-        run: |
-          python - <<'PY'
-          import json
-          import sys
-
-          with open("semgrep-results.json", encoding="utf-8") as f:
-              data = json.load(f)
-
-          with open(".semgrep-baseline.json", encoding="utf-8") as f:
-              baseline = json.load(f)
-
-          accepted = set(baseline["accepted_fingerprints"])
-          findings = data.get("results", [])
-
-          new_critical = []
-
-          for finding in findings:
-              severity = finding.get("extra", {}).get("severity", "").upper()
-              fingerprint = finding.get("extra", {}).get("fingerprint")
-
-              if severity == "CRITICAL" and fingerprint not in accepted:
-                  new_critical.append(finding)
-
-          print(f"Semgrep: {len(findings)} bevindingen.")
-          print(f"Nieuwe kritieke bevindingen: {len(new_critical)}")
-
-          for finding in new_critical:
-              print(
-                  f"CRITICAL: {finding['check_id']} "
-                  f"in {finding['path']}:{finding['start']['line']}"
-              )
-
-          if new_critical:
-              sys.exit(1)
-
-          print("Geen nieuwe kritieke bevindingen.")
-          PY
+        run: python scripts/check-semgrep.py
 
       - name: Upload Semgrep results
         if: always()
@@ -112,7 +77,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITLEAKS_CONFIG: .gitleaks.toml
 
-  # Deploy: alleen eigen repo, alleen push naar main, nooit forks/PRs
+  # Deploy: only own repo, main pushes, never forks or PRs
   deploy:
     needs: [sca-dotnet, sast-semgrep, secret-gitleaks]
     if: github.repository == 'yorbengeerinck/websec-unbreakable-g05' && github.ref == 'refs/heads/main' && github.event_name == 'push'
