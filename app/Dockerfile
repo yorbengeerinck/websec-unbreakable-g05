@@ -8,5 +8,9 @@ RUN dotnet publish Unbreakable.csproj -c Release -o /out --no-restore
 FROM mcr.microsoft.com/dotnet/aspnet:10.0
 WORKDIR /app
 COPY --from=build /out ./
+
+# Run the application as the built-in non-root .NET user
+USER $APP_UID
+
 EXPOSE 8080
 ENTRYPOINT ["dotnet", "Unbreakable.dll"]
