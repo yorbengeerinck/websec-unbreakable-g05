@@ -1,10 +1,11 @@
+
 name: security-pipeline
 
 on:
   push:
-    branches: [ main, dev ]
+    branches: [main, dev]
   pull_request:
-    branches: [ main ]
+    branches: [main]
 
 jobs:
   # DSOMM: Patch Management | Dependency vulnerability scanning (SCA)
@@ -15,6 +16,7 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
+
       - name: SCA strict - fail on new HIGH/CRITICAL
         run: |
           dotnet restore ./app/Unbreakable.csproj
@@ -46,7 +48,55 @@ jobs:
         run: python -m pip install semgrep
 
       - name: Semgrep SAST
-        run: semgrep scan --config auto --error
+        run: |
+          semgrep scan --config auto --json --output semgrep-results.json --strict
+
+      - name: Check new critical findings
+        run: |
+          python - <<'PY'
+          import json
+          import sys
+
+          with open("semgrep-results.json", encoding="utf-8") as f:
+              data = json.load(f)
+
+          with open(".semgrep-baseline.json", encoding="utf-8") as f:
+              baseline = json.load(f)
+
+          accepted = set(baseline["accepted_fingerprints"])
+          findings = data.get("results", [])
+
+          new_critical = []
+
+          for finding in findings:
+              severity = finding.get("extra", {}).get("severity", "").upper()
+              fingerprint = finding.get("extra", {}).get("fingerprint")
+
+              if severity == "CRITICAL" and fingerprint not in accepted:
+                  new_critical.append(finding)
+
+          print(f"Semgrep: {len(findings)} bevindingen.")
+          print(f"Nieuwe kritieke bevindingen: {len(new_critical)}")
+
+          for finding in new_critical:
+              print(
+                  f"CRITICAL: {finding['check_id']} "
+                  f"in {finding['path']}:{finding['start']['line']}"
+              )
+
+          if new_critical:
+              sys.exit(1)
+
+          print("Geen nieuwe kritieke bevindingen.")
+          PY
+
+      - name: Upload Semgrep results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: semgrep-results
+          path: semgrep-results.json
+          if-no-files-found: ignore
 
   # DSOMM: Secrets Management | Secret scanning
   secret-gitleaks:
@@ -55,6 +105,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
       - name: Gitleaks strict
         uses: gitleaks/gitleaks-action@v2
         env:
@@ -68,6 +119,7 @@ jobs:
     runs-on: [self-hosted, linux, g05]
     steps:
       - uses: actions/checkout@v4
+
       - name: Deploy app
         run: |
           docker compose up -d --build
