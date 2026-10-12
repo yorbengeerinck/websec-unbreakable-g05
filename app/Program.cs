@@ -36,7 +36,10 @@ using (var scope = app.Services.CreateScope())
     }
 }
 
-app.UseDeveloperExceptionPage();
+if (app.Environment.IsDevelopment())
+{
+    app.UseDeveloperExceptionPage();
+}
 app.UseCors();
 
 // De SPA: index.html, JavaScript en CSS uit wwwroot.
