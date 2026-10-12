@@ -98,13 +98,13 @@ async function renderInbox(params) {
         <div id="list"></div>`;
 
     if (q) {
-        window.jQuery('#searched').html('Je zocht naar: ' + q);
+        window.jQuery('#searched').text('Je zocht naar: ' + q);
     }
 
     const rows = messages.map(m => `
         <tr>
             <td>${escapeHtml(m.sender)}</td>
-            <td><a href="#/bericht/${m.id}">${m.subject}</a></td>
+            <td><a href="#/bericht/${m.id}">${escapeHtml(m.subject)}</a></td>
             <td>${formatDate(m.sentAt)}</td>
         </tr>`).join('');
 
@@ -142,7 +142,7 @@ async function renderMessage(id) {
     const m = await api.message(id);
 
     app.innerHTML = `
-        <h1>${m.subject}</h1>
+        <h1>${escapeHtml(m.subject)}</h1>
         <dl class="row">
             <dt class="col-sm-2">Van</dt><dd class="col-sm-10">${escapeHtml(m.sender)}</dd>
             <dt class="col-sm-2">Aan</dt><dd class="col-sm-10">${escapeHtml(m.recipient)}</dd>
