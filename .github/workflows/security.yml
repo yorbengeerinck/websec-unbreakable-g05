@@ -7,13 +7,15 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
 jobs:
-  # DSOMM: Patch Management | Dependency vulnerability scanning (SCA)
   sca-dotnet:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.3.0
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
         with:
           dotnet-version: '10.0.x'
 
@@ -34,13 +36,11 @@ jobs:
             echo "Geen vulnerable packages -> OK"
           fi
 
-  # DSOMM: Secure Build | SAST
   sast-semgrep:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.3.0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: '3.x'
 
@@ -51,39 +51,36 @@ jobs:
         run: |
           semgrep scan --config auto --json --output semgrep-results.json --strict
 
-      # Compare scan results against reviewed baseline
       - name: Check new critical findings
         run: python scripts/check-semgrep.py
 
       - name: Upload Semgrep results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: semgrep-results
           path: semgrep-results.json
           if-no-files-found: ignore
 
-  # DSOMM: Secrets Management | Secret scanning
   secret-gitleaks:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.3.0
         with:
           fetch-depth: 0
 
       - name: Gitleaks strict
-        uses: gitleaks/gitleaks-action@v2
+        uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITLEAKS_CONFIG: .gitleaks.toml
 
-  # Deploy: only own repo, main pushes, never forks or PRs
   deploy:
     needs: [sca-dotnet, sast-semgrep, secret-gitleaks]
     if: github.repository == 'yorbengeerinck/websec-unbreakable-g05' && github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: [self-hosted, linux, g05]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.3.0
 
       - name: Deploy app
         run: |
