@@ -84,7 +84,7 @@ jobs:
 
       - name: Deploy app
         run: |
-          docker compose up -d --build
+          docker compose --env-file /etc/unbreakable/.env up -d --build
           sleep 10
           docker ps
           curl -f http://g05.ipv6.thelastgym.be/health
