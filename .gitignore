@@ -5,3 +5,9 @@ obj/
 *.user
 *.suo
 .env
+semgrep-results.json
+sca.txt
+TEST.md
+*.log
+*.tmp
+.DS_Store
