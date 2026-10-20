@@ -29,9 +29,6 @@ public class Message
     [Display(Name = "Verzonden")]
     public DateTime SentAt { get; set; }
 
-    [Display(Name = "Verzonden")]
-    public DateTime SentAt { get; set; }
-
     // Opdracht 3: nummer van de gebruikte lijn in het codeboek (de sleutel zelf komt nooit op de server).
     [Range(1, 50)]
     [Display(Name = "Lijn codeboek")]
