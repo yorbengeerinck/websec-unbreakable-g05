@@ -64,22 +64,6 @@ api.MapGet("/users", async (UnbreakableContext db) =>
 
 api.MapGet("/messages", async (HttpRequest request, UnbreakableContext db) =>
 {
-    // Opdracht 3: de API aanvaardt enkel versleutelde berichten.
-    if (message.KeyLine is null or < 1 or > 50 ||
-        string.IsNullOrEmpty(message.Body) || !Regex.IsMatch(message.Body, "^[A-Z0-9_]{40}$", RegexOptions.None, TimeSpan.FromMilliseconds(100)) ||
-        string.IsNullOrEmpty(message.Mac) || !Regex.IsMatch(message.Mac, "^[0-9a-f]{64}$", RegexOptions.None, TimeSpan.FromMilliseconds(100)))
-    {
-        return Results.BadRequest("Enkel versleutelde berichten: body = 40 tekens A-Z 0-9 _, keyLine 1-50, mac = 64 hex-tekens.");
-    }
-
-    // Een lijn van het codeboek mag maar één keer gebruikt worden (anders is het geen one-time pad meer).
-    if (await db.Messages.AnyAsync(m => m.KeyLine == message.KeyLine))
-    {
-        return Results.Conflict($"Lijn {message.KeyLine} werd al gebruikt. Kies een nieuwe lijn uit je reeks.");
-    }
-
-    // Het onderwerp is niet versleuteld, dus de server zet een vaste tekst (geen plaintext in de databank).
-    message.Subject = "Versleuteld bericht";
     var user = CurrentUser(request);
     if (string.IsNullOrEmpty(user))
     {
@@ -139,6 +123,23 @@ api.MapGet("/messages/{id:int}", async (int id, UnbreakableContext db) =>
 
 api.MapPost("/messages", async (Message message, HttpRequest request, UnbreakableContext db) =>
 {
+    // Opdracht 3: de API aanvaardt enkel versleutelde berichten.
+    if (message.KeyLine is null or < 1 or > 50 ||
+        string.IsNullOrEmpty(message.Body) || !Regex.IsMatch(message.Body, "^[A-Z0-9_]{40}$", RegexOptions.None, TimeSpan.FromMilliseconds(100)) ||
+        string.IsNullOrEmpty(message.Mac) || !Regex.IsMatch(message.Mac, "^[0-9a-f]{64}$", RegexOptions.None, TimeSpan.FromMilliseconds(100)))
+    {
+        return Results.BadRequest("Enkel versleutelde berichten: body = 40 tekens A-Z 0-9 _, keyLine 1-50, mac = 64 hex-tekens.");
+    }
+
+    // Een lijn van het codeboek mag maar één keer gebruikt worden (anders is het geen one-time pad meer).
+    if (await db.Messages.AnyAsync(m => m.KeyLine == message.KeyLine))
+    {
+        return Results.Conflict($"Lijn {message.KeyLine} werd al gebruikt. Kies een nieuwe lijn uit je reeks.");
+    }
+
+    // Het onderwerp is niet versleuteld, dus de server zet een vaste tekst (geen plaintext in de databank).
+    message.Subject = "Versleuteld bericht";
+
     // Geen afzender meegegeven? Dan nemen we wie je bent.
     if (string.IsNullOrEmpty(message.Sender))
     {
