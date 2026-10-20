@@ -21,7 +21,8 @@ async function call(method, path, body) {
 
     const response = await fetch('/api' + path, options);
     if (!response.ok) {
-        throw new Error(`${method} ${path} gaf ${response.status}`);
+        const detail = await response.text().catch(() => '');
+        throw new Error(`${method} ${path} gaf ${response.status}${detail ? ': ' + detail : ''}`);
     }
 
     const type = response.headers.get('Content-Type') || '';
