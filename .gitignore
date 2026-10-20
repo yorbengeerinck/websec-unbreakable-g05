@@ -11,3 +11,7 @@ TEST.md
 *.log
 *.tmp
 .DS_Store
+# Opdracht 3: sleutels NOOIT in de repo
+codeboek*.txt
+hmac*.txt
+*.key
