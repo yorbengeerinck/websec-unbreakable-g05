@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Newtonsoft.Json;
 using Unbreakable.Data;
 using Unbreakable.Models;
+using System.Text.RegularExpressions;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -13,7 +14,7 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
-// Databank aanmaken en vullen met voorbeeldberichten.
+// Databank aanmaken (opdracht 3: geen onversleutelde voorbeeldberichten meer).
 // De databank kan iets later opstarten dan de app, dus we proberen een paar keer.
 using (var scope = app.Services.CreateScope())
 {
@@ -25,7 +26,10 @@ using (var scope = app.Services.CreateScope())
         try
         {
             context.Database.EnsureCreated();
-            SeedData.Initialize(context);
+            // EnsureCreated voegt geen kolommen toe aan een bestaande tabel, dus doen we dat zelf (idempotent).
+            context.Database.ExecuteSqlRaw(
+                "ALTER TABLE \"Messages\" ADD COLUMN IF NOT EXISTS \"KeyLine\" integer NULL; " +
+                "ALTER TABLE \"Messages\" ADD COLUMN IF NOT EXISTS \"Mac\" character varying(64) NULL;");
             break;
         }
         catch (Exception ex) when (attempt < 30)
@@ -60,6 +64,22 @@ api.MapGet("/users", async (UnbreakableContext db) =>
 
 api.MapGet("/messages", async (HttpRequest request, UnbreakableContext db) =>
 {
+    // Opdracht 3: de API aanvaardt enkel versleutelde berichten.
+    if (message.KeyLine is null or < 1 or > 50 ||
+        string.IsNullOrEmpty(message.Body) || !Regex.IsMatch(message.Body, "^[A-Z0-9_]{40}$", RegexOptions.None, TimeSpan.FromMilliseconds(100)) ||
+        string.IsNullOrEmpty(message.Mac) || !Regex.IsMatch(message.Mac, "^[0-9a-f]{64}$", RegexOptions.None, TimeSpan.FromMilliseconds(100)))
+    {
+        return Results.BadRequest("Enkel versleutelde berichten: body = 40 tekens A-Z 0-9 _, keyLine 1-50, mac = 64 hex-tekens.");
+    }
+
+    // Een lijn van het codeboek mag maar één keer gebruikt worden (anders is het geen one-time pad meer).
+    if (await db.Messages.AnyAsync(m => m.KeyLine == message.KeyLine))
+    {
+        return Results.Conflict($"Lijn {message.KeyLine} werd al gebruikt. Kies een nieuwe lijn uit je reeks.");
+    }
+
+    // Het onderwerp is niet versleuteld, dus de server zet een vaste tekst (geen plaintext in de databank).
+    message.Subject = "Versleuteld bericht";
     var user = CurrentUser(request);
     if (string.IsNullOrEmpty(user))
     {
@@ -76,6 +96,8 @@ api.MapGet("/messages", async (HttpRequest request, UnbreakableContext db) =>
 
     return Results.Ok(await inbox.OrderByDescending(m => m.SentAt).ToListAsync());
 });
+
+
 
 api.MapGet("/messages/search", async (HttpRequest request, UnbreakableContext db) =>
 {
