@@ -83,8 +83,14 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.3.0
 
       - name: Deploy app
+        run: docker compose --env-file /etc/unbreakable/.env up -d --build
+
+      - name: Health check via WAF (HTTPS, met retries)
         run: |
-          docker compose --env-file /etc/unbreakable/.env up -d --build
-          sleep 10
-          docker ps
-          curl -f http://g05.ipv6.thelastgym.be/health
+          for i in $(seq 1 12); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' https://g05.ipv6.thelastgym.be/health || true)
+            [ "$code" = "200" ] && echo "health OK" && exit 0
+            echo "poging $i: HTTP $code"; sleep 5
+          done
+          docker compose --env-file /etc/unbreakable/.env logs --tail 50 bunkerweb
+          exit 1
