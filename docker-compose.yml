@@ -84,6 +84,7 @@ services:
 volumes:
   dbdata:
   bw-storage:
+  bw-dbdata:
 
 networks:
   backend:
