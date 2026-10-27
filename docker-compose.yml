@@ -41,6 +41,8 @@ services:
     environment:
       API_WHITELIST_IP: "127.0.0.0/8 10.20.30.0/24"
       DATABASE_URI: "postgresql://bunkerweb:${BW_DB_PASSWORD}@bw-db:5432/bunkerweb"
+      ADMIN_USERNAME: "YPJ"
+      ADMIN_PASSWORD: "${BW_UI_ADMIN_PASSWORD}"
     ports:
       - "127.0.0.1:7000:7000/tcp"
     restart: unless-stopped
