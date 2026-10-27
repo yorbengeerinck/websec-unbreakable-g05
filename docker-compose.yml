@@ -36,6 +36,17 @@ services:
       - bw-universe
       - bw-services
 
+  bw-ui:
+    image: bunkerity/bunkerweb-ui:1.6.15
+    environment:
+      API_WHITELIST_IP: "127.0.0.0/8 10.20.30.0/24"
+      DATABASE_URI: "postgresql://bunkerweb:${BW_DB_PASSWORD}@bw-db:5432/bunkerweb"
+    ports:
+      - "127.0.0.1:7000:7000/tcp"
+    restart: unless-stopped
+    networks:
+      - bw-universe
+
   bw-scheduler:
     image: bunkerity/bunkerweb-scheduler:1.6.15
     depends_on:
@@ -52,8 +63,20 @@ services:
       REVERSE_PROXY_HOST: "http://app:8080"
       # IPv6 end-to-end: BunkerWeb luistert op [::] en ziet het echte client-IP
       USE_IPV6: "yes"
+      DATABASE_URI: "postgresql://bunkerweb:${BW_DB_PASSWORD}@bw-db:5432/bunkerweb"
     volumes:
       - bw-storage:/data
+    restart: unless-stopped
+    networks:
+      - bw-universe
+  bw-db:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: bunkerweb
+      POSTGRES_USER: bunkerweb
+      POSTGRES_PASSWORD: ${BW_DB_PASSWORD}
+    volumes:
+      - bw-dbdata:/var/lib/postgresql/data
     restart: unless-stopped
     networks:
       - bw-universe
