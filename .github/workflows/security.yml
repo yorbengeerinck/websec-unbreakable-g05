@@ -19,22 +19,16 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
-      - name: SCA strict - fail on new HIGH/CRITICAL
+      - name: SCA strict - fail on any vulnerable package
         run: |
           dotnet restore ./app/Unbreakable.csproj
           dotnet list ./app/Unbreakable.csproj package --vulnerable --include-transitive 2>&1 | tee sca.txt
           cat sca.txt
           if grep -q "has the following vulnerable packages" sca.txt; then
-            NEW=$(grep -E "High|Critical|Severe" sca.txt | grep -v "Newtonsoft.Json" || true)
-            if [ -n "$NEW" ]; then
-              echo "NIEUWE KRITIEKE VULN: $NEW"
-              exit 1
-            else
-              echo "Alleen baseline Newtonsoft.Json 12.0.1 -> OK"
-            fi
-          else
-            echo "Geen vulnerable packages -> OK"
+            echo "Kwetsbare packages gevonden. De Newtonsoft.Json-baseline is opgeruimd, dus er is geen exceptie meer."
+            exit 1
           fi
+          echo "Geen vulnerable packages -> OK"
 
   sast-semgrep:
     runs-on: ubuntu-latest
@@ -42,10 +36,15 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.3.0
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
-          python-version: '3.x'
+          # Gepind: voor 3.15 bestaat er nog geen semgrep-wheel.
+          python-version: '3.13'
 
       - name: Install Semgrep
-        run: python -m pip install semgrep
+        # Gepind op 1.182.1. Semgrep 1.185.0 crasht op de auto-ruleset met
+        # "semgrep-core exited with -11" (segfault), nog voor het scannen begint.
+        # Zonder pin verandert de scanner ongemerkt van versie en wordt de
+        # uitslag van deze job niet reproduceerbaar.
+        run: python -m pip install semgrep==1.182.1
 
       - name: Semgrep SAST
         run: |
