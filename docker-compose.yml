@@ -7,8 +7,9 @@ services:
     environment:
       ConnectionStrings__Unbreakable: "Host=db;Port=5432;Database=unbreakable;Username=unbreakable;Password=${DB_PASSWORD:?DB_PASSWORD ontbreekt in /etc/unbreakable/.env}"
       # Keycloak: metadata/JWKS gaan over het interne netwerk, de issuer is de publieke URL.
-      Oidc__MetadataAddress: "http://keycloak:8080/realms/unbreakable/.well-known/openid-configuration"
-      Oidc__Issuer: "https://${AUTH_DOMAIN}/realms/unbreakable"
+      # Keycloak draait onder /auth op dezelfde hostnaam als de app (geen apart DNS-record nodig).
+      Oidc__MetadataAddress: "http://keycloak:8080/auth/realms/unbreakable/.well-known/openid-configuration"
+      Oidc__Issuer: "https://${APP_DOMAIN:?APP_DOMAIN ontbreekt in /etc/unbreakable/.env}/auth/realms/unbreakable"
       Oidc__Audience: "unbreakable-api"
       # OpenFGA (PDP). Store- en model-ID komen uit deploy/openfga/bootstrap.sh (Y4).
       OpenFga__ApiUrl: "http://openfga:8080"
@@ -25,9 +26,9 @@ services:
     restart: unless-stopped
     mem_limit: 512m
     networks:
-      - edge
+      - bw-services
       - app
-      - data
+      - backend
 
   db:
     image: postgres:17
@@ -39,7 +40,7 @@ services:
       - dbdata:/var/lib/postgresql/data
     restart: unless-stopped
     networks:
-      - data
+      - backend
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U unbreakable -d unbreakable"]
       interval: 5s
@@ -60,8 +61,9 @@ services:
       KC_DB_URL_DATABASE: keycloak
       KC_DB_USERNAME: keycloak
       KC_DB_PASSWORD: ${KC_DB_PASSWORD:?KC_DB_PASSWORD ontbreekt in /etc/unbreakable/.env}
-      # Publieke URL achter BunkerWeb; TLS eindigt bij de WAF.
-      KC_HOSTNAME: "https://${AUTH_DOMAIN:?AUTH_DOMAIN ontbreekt in /etc/unbreakable/.env}"
+      # Publieke URL achter BunkerWeb (pad /auth op de app-hostnaam); TLS eindigt bij de WAF.
+      KC_HOSTNAME: "https://${APP_DOMAIN:?APP_DOMAIN ontbreekt in /etc/unbreakable/.env}/auth"
+      KC_HTTP_RELATIVE_PATH: /auth
       KC_PROXY_HEADERS: xforwarded
       KC_HTTP_ENABLED: "true"
       KC_HEALTH_ENABLED: "true"
@@ -77,7 +79,7 @@ services:
     restart: unless-stopped
     mem_limit: 1g
     networks:
-      - edge
+      - bw-services
       - iam
     # Geen healthcheck: de Keycloak-image heeft geen shell/curl (ubi-micro).
     # De app start zonder Keycloak en geeft 503 op beveiligde routes (fail closed).
@@ -169,7 +171,7 @@ services:
     restart: unless-stopped
     networks:
       - bw-universe
-      - edge
+      - bw-services
 
   bw-ui:
     image: bunkerity/bunkerweb-ui:1.6.15
@@ -199,6 +201,9 @@ services:
       USE_REVERSE_PROXY: "yes"
       REVERSE_PROXY_URL: "/"
       REVERSE_PROXY_HOST: "http://app:8080"
+      # Tweede regel: Keycloak onder /auth (het pad blijft behouden, KC_HTTP_RELATIVE_PATH=/auth).
+      REVERSE_PROXY_URL_2: "/auth/"
+      REVERSE_PROXY_HOST_2: "http://keycloak:8080/auth/"
       # De WAF zet zijn eigen Referrer-Policy; gelijk houden met de app.
       REFERRER_POLICY: "no-referrer"
       # IPv6 end-to-end: BunkerWeb luistert op [::] en ziet het echte client-IP
@@ -230,16 +235,18 @@ volumes:
   openfgadbdata:
 
 networks:
-  # edge: BunkerWeb <-> app en BunkerWeb <-> keycloak.
+  # bw-services (= "edge" in het plan): BunkerWeb <-> app en BunkerWeb <-> keycloak.
+  # De naam blijft bewust bw-services: hernoemen laat Docker een tweede netwerk
+  # met hetzelfde IPv6-subnet maken ("pool overlaps") terwijl het oude bestaat.
   # IPv6 omdat Docker dan ip6tables-DNAT gebruikt i.p.v. docker-proxy:
   # het echte client-IP blijft behouden (waar de app op vertrouwt).
-  edge:
+  bw-services:
     enable_ipv6: true
     ipam:
       config:
         - subnet: fd05:5:0:1::/64
 
-  # app: app <-> openfga en app <-> keycloak.
+  # app: app <-> openfga (PDP-calls).
   app:
     internal: true
 
@@ -247,8 +254,8 @@ networks:
   authz:
     internal: true
 
-  # data: app <-> app-database.
-  data:
+  # backend (= "data" in het plan): app <-> app-database.
+  backend:
     internal: true
 
   # iam: keycloak <-> keycloak-db.
