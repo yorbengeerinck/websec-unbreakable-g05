@@ -201,9 +201,12 @@ services:
       USE_REVERSE_PROXY: "yes"
       REVERSE_PROXY_URL: "/"
       REVERSE_PROXY_HOST: "http://app:8080"
-      # Tweede regel: Keycloak onder /auth (het pad blijft behouden, KC_HTTP_RELATIVE_PATH=/auth).
+      # Tweede regel: Keycloak onder /auth. Bewust GEEN pad in de host: met een pad in
+      # proxy_pass vervangt nginx de hele request-URI (alles werd /auth/ -> 302 naar
+      # /auth/admin/). Zonder pad blijft de originele URI intact; Keycloak verwacht
+      # zelf al /auth door KC_HTTP_RELATIVE_PATH=/auth.
       REVERSE_PROXY_URL_2: "/auth/"
-      REVERSE_PROXY_HOST_2: "http://keycloak:8080/auth/"
+      REVERSE_PROXY_HOST_2: "http://keycloak:8080"
       # De WAF zet zijn eigen Referrer-Policy; gelijk houden met de app.
       REFERRER_POLICY: "no-referrer"
       # IPv6 end-to-end: BunkerWeb luistert op [::] en ziet het echte client-IP
