@@ -1,16 +1,33 @@
 services:
   app:
     build: ./app
+    # Geen ports: de app is enkel bereikbaar via BunkerWeb (netwerk edge).
     expose:
       - "8080"
     environment:
       ConnectionStrings__Unbreakable: "Host=db;Port=5432;Database=unbreakable;Username=unbreakable;Password=${DB_PASSWORD:?DB_PASSWORD ontbreekt in /etc/unbreakable/.env}"
+      # Keycloak: metadata/JWKS gaan over het interne netwerk, de issuer is de publieke URL.
+      Oidc__MetadataAddress: "http://keycloak:8080/realms/unbreakable/.well-known/openid-configuration"
+      Oidc__Issuer: "https://${AUTH_DOMAIN}/realms/unbreakable"
+      Oidc__Audience: "unbreakable-api"
+      # OpenFGA (PDP). Store- en model-ID komen uit deploy/openfga/bootstrap.sh (Y4).
+      OpenFga__ApiUrl: "http://openfga:8080"
+      OpenFga__ApiToken: "${OPENFGA_API_TOKEN:-}"
+      OpenFga__StoreId: "${OPENFGA_STORE_ID:-}"
+      OpenFga__ModelId: "${OPENFGA_MODEL_ID:-}"
     depends_on:
-      - db
+      db:
+        condition: service_healthy
+      openfga:
+        condition: service_started
+      keycloak:
+        condition: service_started
     restart: unless-stopped
+    mem_limit: 512m
     networks:
-      - backend
-      - bw-services
+      - edge
+      - app
+      - data
 
   db:
     image: postgres:17
@@ -22,19 +39,137 @@ services:
       - dbdata:/var/lib/postgresql/data
     restart: unless-stopped
     networks:
-      - backend
+      - data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U unbreakable -d unbreakable"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
+  # --- Identity provider (OIDC) -----------------------------------------
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.8.2@sha256:723b1d6e254c0fc96d5cffec860c7e0744d6a3277822b865bb538cf891575e41
+    command: start
+    environment:
+      KC_DB: postgres
+      # Losse host/port/database i.p.v. één jdbc-URL: geen connection-string in de
+      # repo (gitleaks' generic-api-key slaat op zo'n URL aan) en het wachtwoord
+      # blijft een aparte variabele.
+      KC_DB_URL_HOST: keycloak-db
+      KC_DB_URL_PORT: "5432"
+      KC_DB_URL_DATABASE: keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: ${KC_DB_PASSWORD:?KC_DB_PASSWORD ontbreekt in /etc/unbreakable/.env}
+      # Publieke URL achter BunkerWeb; TLS eindigt bij de WAF.
+      KC_HOSTNAME: "https://${AUTH_DOMAIN:?AUTH_DOMAIN ontbreekt in /etc/unbreakable/.env}"
+      KC_PROXY_HEADERS: xforwarded
+      KC_HTTP_ENABLED: "true"
+      KC_HEALTH_ENABLED: "true"
+      # Eerste admin; wordt na de setup verwijderd (Y3/Y9).
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KC_BOOTSTRAP_ADMIN_USERNAME:-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KC_BOOTSTRAP_ADMIN_PASSWORD:?KC_BOOTSTRAP_ADMIN_PASSWORD ontbreekt in /etc/unbreakable/.env}
+    # Geen ports. Enkel via BunkerWeb (edge) en de eigen DB (iam).
+    expose:
+      - "8080"
+    depends_on:
+      keycloak-db:
+        condition: service_healthy
+    restart: unless-stopped
+    mem_limit: 1g
+    networks:
+      - edge
+      - iam
+    # Geen healthcheck: de Keycloak-image heeft geen shell/curl (ubi-micro).
+    # De app start zonder Keycloak en geeft 503 op beveiligde routes (fail closed).
+
+  keycloak-db:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: keycloak
+      POSTGRES_PASSWORD: ${KC_DB_PASSWORD:?KC_DB_PASSWORD ontbreekt in /etc/unbreakable/.env}
+    volumes:
+      - keycloakdbdata:/var/lib/postgresql/data
+    restart: unless-stopped
+    networks:
+      - iam
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U keycloak -d keycloak"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # --- Policy decision point (ReBAC) ------------------------------------
+  openfga-migrate:
+    image: openfga/openfga:v1.22.1@sha256:b852071314f1fda1194d341a6ebac0a4f619b3cd87a6626d2ccc7048af4ec671
+    command: migrate
+    environment:
+      OPENFGA_DATASTORE_ENGINE: postgres
+      OPENFGA_DATASTORE_URI: "postgres://openfga:${OPENFGA_DB_PASSWORD:?OPENFGA_DB_PASSWORD ontbreekt in /etc/unbreakable/.env}@openfga-db:5432/openfga?sslmode=disable"
+    depends_on:
+      openfga-db:
+        condition: service_healthy
+    networks:
+      - authz
+    restart: "no"
+
+  openfga:
+    image: openfga/openfga:v1.22.1@sha256:b852071314f1fda1194d341a6ebac0a4f619b3cd87a6626d2ccc7048af4ec671
+    command: run
+    environment:
+      OPENFGA_DATASTORE_ENGINE: postgres
+      OPENFGA_DATASTORE_URI: "postgres://openfga:${OPENFGA_DB_PASSWORD:?OPENFGA_DB_PASSWORD ontbreekt in /etc/unbreakable/.env}@openfga-db:5432/openfga?sslmode=disable"
+      OPENFGA_AUTHN_METHOD: preshared
+      OPENFGA_AUTHN_PRESHARED_KEYS: ${OPENFGA_API_TOKEN:?OPENFGA_API_TOKEN ontbreekt in /etc/unbreakable/.env}
+      OPENFGA_PLAYGROUND_ENABLED: "false"
+      OPENFGA_LOG_FORMAT: json
+    # Geen ports: enkel bereikbaar voor de app (app) en de eigen DB (authz).
+    expose:
+      - "8080"
+    depends_on:
+      openfga-migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    mem_limit: 512m
+    networks:
+      - app
+      - authz
+    # Geen healthcheck: de OpenFGA-image heeft geen shell/curl. De PEP is fail
+    # closed (503), dus een gemiste healthcheck is geen veiligheidsrisico.
+
+  openfga-db:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: openfga
+      POSTGRES_USER: openfga
+      POSTGRES_PASSWORD: ${OPENFGA_DB_PASSWORD:?OPENFGA_DB_PASSWORD ontbreekt in /etc/unbreakable/.env}
+    volumes:
+      - openfgadbdata:/var/lib/postgresql/data
+    restart: unless-stopped
+    networks:
+      - authz
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U openfga -d openfga"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # --- Web application firewall / reverse proxy -------------------------
   bunkerweb:
     image: bunkerity/bunkerweb:1.6.15
+    # Enige service met publieke poorten.
     ports:
       - "80:8080/tcp"
       - "443:8443/tcp"
     environment:
       API_WHITELIST_IP: "127.0.0.0/8 10.20.30.0/24"
+    depends_on:
+      - app
+      - keycloak
     restart: unless-stopped
     networks:
       - bw-universe
-      - bw-services
+      - edge
 
   bw-ui:
     image: bunkerity/bunkerweb-ui:1.6.15
@@ -43,6 +178,7 @@ services:
       DATABASE_URI: "postgresql://bunkerweb:${BW_DB_PASSWORD}@bw-db:5432/bunkerweb"
       ADMIN_USERNAME: "YPJ"
       ADMIN_PASSWORD: "${BW_UI_ADMIN_PASSWORD}"
+    # Enkel op loopback: niet van buiten bereikbaar.
     ports:
       - "127.0.0.1:7000:7000/tcp"
     restart: unless-stopped
@@ -63,6 +199,8 @@ services:
       USE_REVERSE_PROXY: "yes"
       REVERSE_PROXY_URL: "/"
       REVERSE_PROXY_HOST: "http://app:8080"
+      # De WAF zet zijn eigen Referrer-Policy; gelijk houden met de app.
+      REFERRER_POLICY: "no-referrer"
       # IPv6 end-to-end: BunkerWeb luistert op [::] en ziet het echte client-IP
       USE_IPV6: "yes"
       DATABASE_URI: "postgresql://bunkerweb:${BW_DB_PASSWORD}@bw-db:5432/bunkerweb"
@@ -71,6 +209,7 @@ services:
     restart: unless-stopped
     networks:
       - bw-universe
+
   bw-db:
     image: postgres:17
     environment:
@@ -87,17 +226,36 @@ volumes:
   dbdata:
   bw-storage:
   bw-dbdata:
+  keycloakdbdata:
+  openfgadbdata:
 
 networks:
-  backend:
-    internal: true
-  # IPv6 op het netwerk waarlangs 80/443 gepubliceerd zijn:
-  # Docker gebruikt dan ip6tables-DNAT i.p.v. docker-proxy -> bron-IP blijft behouden
-  bw-services:
+  # edge: BunkerWeb <-> app en BunkerWeb <-> keycloak.
+  # IPv6 omdat Docker dan ip6tables-DNAT gebruikt i.p.v. docker-proxy:
+  # het echte client-IP blijft behouden (waar de app op vertrouwt).
+  edge:
     enable_ipv6: true
     ipam:
       config:
         - subnet: fd05:5:0:1::/64
+
+  # app: app <-> openfga en app <-> keycloak.
+  app:
+    internal: true
+
+  # authz: openfga <-> openfga-db. Nooit bereikbaar voor de app.
+  authz:
+    internal: true
+
+  # data: app <-> app-database.
+  data:
+    internal: true
+
+  # iam: keycloak <-> keycloak-db.
+  iam:
+    internal: true
+
+  # bw-universe: interne BunkerWeb-plumbing (scheduler, UI, eigen DB).
   bw-universe:
     ipam:
       config:
