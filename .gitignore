@@ -4,14 +4,20 @@ obj/
 .vscode/
 *.user
 *.suo
-.env
 semgrep-results.json
 sca.txt
 TEST.md
 *.log
 *.tmp
 .DS_Store
+
+# Opdracht 4: omgevingsbestanden en sleutels NOOIT in de repo
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
 # Opdracht 3: sleutels NOOIT in de repo
 codeboek*.txt
 hmac*.txt
-*.key

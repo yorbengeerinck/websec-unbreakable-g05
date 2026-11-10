@@ -19,22 +19,16 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
-      - name: SCA strict - fail on new HIGH/CRITICAL
+      - name: SCA strict - fail on any vulnerable package
         run: |
           dotnet restore ./app/Unbreakable.csproj
           dotnet list ./app/Unbreakable.csproj package --vulnerable --include-transitive 2>&1 | tee sca.txt
           cat sca.txt
           if grep -q "has the following vulnerable packages" sca.txt; then
-            NEW=$(grep -E "High|Critical|Severe" sca.txt | grep -v "Newtonsoft.Json" || true)
-            if [ -n "$NEW" ]; then
-              echo "NIEUWE KRITIEKE VULN: $NEW"
-              exit 1
-            else
-              echo "Alleen baseline Newtonsoft.Json 12.0.1 -> OK"
-            fi
-          else
-            echo "Geen vulnerable packages -> OK"
+            echo "Kwetsbare packages gevonden. De Newtonsoft.Json-baseline is opgeruimd, dus er is geen exceptie meer."
+            exit 1
           fi
+          echo "Geen vulnerable packages -> OK"
 
   sast-semgrep:
     runs-on: ubuntu-latest

@@ -1,18 +1,70 @@
+using System.Net;
+using System.Text.Json;
+using System.Text.RegularExpressions;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
-using Newtonsoft.Json;
 using Unbreakable.Data;
 using Unbreakable.Models;
-using System.Text.RegularExpressions;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddDbContext<UnbreakableContext>(options =>
-    options.UseNpgsql(builder.Configuration.GetConnectionString("Unbreakable")));
+// Opdracht 4: geen geheimen in de repo. De connectionstring komt uit de omgeving
+// (ConnectionStrings__Unbreakable). Ontbreekt hij, dan start de app niet (fail closed).
+var connectionString = builder.Configuration.GetConnectionString("Unbreakable");
+if (string.IsNullOrWhiteSpace(connectionString))
+{
+    throw new InvalidOperationException(
+        "ConnectionStrings__Unbreakable ontbreekt. Zet de connectionstring in de omgeving " +
+        "(/etc/unbreakable/.env), nooit in appsettings.json.");
+}
 
-builder.Services.AddCors(options =>
-    options.AddDefaultPolicy(policy => policy.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod()));
+builder.Services.AddDbContext<UnbreakableContext>(options => options.UseNpgsql(connectionString));
+
+// Opdracht 4: geen CORS meer. De SPA wordt door dezelfde app geserveerd en is dus
+// same-origin; een cross-origin-beleid zou alleen maar extra aanvalsvlak toevoegen.
+
+// De app staat achter BunkerWeb. Alleen BunkerWeb mag X-Forwarded-* zetten, dus we
+// vertrouwen enkel het interne Docker-netwerk waarop BunkerWeb met de app praat.
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+    options.KnownProxies.Clear();
+    options.KnownIPNetworks.Clear();
+    options.KnownIPNetworks.Add(System.Net.IPNetwork.Parse("fd05:5:0:1::/64"));
+    options.ForwardLimit = 1;
+});
 
 var app = builder.Build();
+
+// Moet als eerste middleware: daarna ziet de app het echte client-IP en schema.
+app.UseForwardedHeaders();
+
+// Security headers. CSP staat op Report-Only tot de SPA volledig CSP-clean is;
+// de rest wordt meteen afgedwongen.
+app.Use(async (context, next) =>
+{
+    var headers = context.Response.Headers;
+    headers["X-Content-Type-Options"] = "nosniff";
+    headers["Referrer-Policy"] = "no-referrer";
+    headers["X-Frame-Options"] = "DENY";
+    headers["Content-Security-Policy-Report-Only"] =
+        "default-src 'self'; " +
+        "script-src 'self'; " +
+        "style-src 'self'; " +
+        "img-src 'self' data:; " +
+        "connect-src 'self'; " +
+        "object-src 'none'; " +
+        "base-uri 'none'; " +
+        "frame-ancestors 'none'; " +
+        "form-action 'self'";
+
+    if (context.Request.Path.StartsWithSegments("/api"))
+    {
+        headers["Cache-Control"] = "no-store";
+    }
+
+    await next();
+});
 
 // Databank aanmaken (opdracht 3: geen onversleutelde voorbeeldberichten meer).
 // De databank kan iets later opstarten dan de app, dus we proberen een paar keer.
@@ -44,7 +96,6 @@ if (app.Environment.IsDevelopment())
 {
     app.UseDeveloperExceptionPage();
 }
-app.UseCors();
 
 // De SPA: index.html, JavaScript en CSS uit wwwroot.
 app.UseDefaultFiles();
@@ -52,7 +103,7 @@ app.UseStaticFiles();
 
 app.MapGet("/health", () => "ok");
 
-// De API. Wie je bent, staat voorlopig in de header X-User.
+// De API. Wie je bent, staat voorlopig in de header X-User (opdracht 4 vervangt dit door JWT).
 var api = app.MapGroup("/api");
 
 api.MapGet("/users", async (UnbreakableContext db) =>
@@ -81,8 +132,6 @@ api.MapGet("/messages", async (HttpRequest request, UnbreakableContext db) =>
     return Results.Ok(await inbox.OrderByDescending(m => m.SentAt).ToListAsync());
 });
 
-
-
 api.MapGet("/messages/search", async (HttpRequest request, UnbreakableContext db) =>
 {
     var user = CurrentUser(request);
@@ -91,11 +140,25 @@ api.MapGet("/messages/search", async (HttpRequest request, UnbreakableContext db
         return Results.Unauthorized();
     }
 
-    var q = request.Query["q"].ToString();
-    var sql = "SELECT * FROM \"Messages\" WHERE \"Recipient\" = '" + user + "' " +
-              "AND (\"Subject\" ILIKE '%" + q + "%' OR \"Body\" ILIKE '%" + q + "%')";
+    var q = request.Query["q"].ToString().Trim();
+    if (q.Length > 100)
+    {
+        return Results.BadRequest("Zoekterm te lang (max 100 tekens).");
+    }
 
-    var messages = await db.Messages.FromSqlRaw(sql).OrderByDescending(m => m.SentAt).ToListAsync();
+    var inbox = db.Messages.Where(m => m.Recipient == user);
+
+    if (q.Length > 0)
+    {
+        // Geparameteriseerd: EF Core stuurt de zoekterm als parameter, nooit als SQL-tekst.
+        // % en _ in de invoer worden ontsnapt, zodat ze letterlijk gezocht worden.
+        var pattern = "%" + EscapeLike(q) + "%";
+        inbox = inbox.Where(m =>
+            EF.Functions.ILike(m.Subject, pattern, "\\") ||
+            EF.Functions.ILike(m.Body, pattern, "\\"));
+    }
+
+    var messages = await inbox.OrderByDescending(m => m.SentAt).ToListAsync();
     return Results.Ok(messages);
 });
 
@@ -112,7 +175,8 @@ api.MapGet("/messages/export", async (HttpRequest request, UnbreakableContext db
         .OrderBy(m => m.SentAt)
         .ToListAsync();
 
-    return Results.Text(JsonConvert.SerializeObject(messages, Formatting.Indented), "application/json");
+    var json = JsonSerializer.Serialize(messages, new JsonSerializerOptions { WriteIndented = true });
+    return Results.Text(json, "application/json");
 });
 
 api.MapGet("/messages/{id:int}", async (int id, UnbreakableContext db) =>
@@ -173,4 +237,10 @@ app.Run();
 static string CurrentUser(HttpRequest request)
 {
     return request.Headers["X-User"].ToString();
+}
+
+// Ontsnapt de LIKE-jokertekens zodat een zoekterm letterlijk gezocht wordt.
+static string EscapeLike(string value)
+{
+    return value.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_");
 }
