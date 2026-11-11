@@ -67,9 +67,9 @@ services:
       KC_PROXY_HEADERS: xforwarded
       KC_HTTP_ENABLED: "true"
       KC_HEALTH_ENABLED: "true"
-      # Eerste admin; wordt na de setup verwijderd (Y3/Y9).
-      KC_BOOTSTRAP_ADMIN_USERNAME: ${KC_BOOTSTRAP_ADMIN_USERNAME:-admin}
-      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KC_BOOTSTRAP_ADMIN_PASSWORD:?KC_BOOTSTRAP_ADMIN_PASSWORD ontbreekt in /etc/unbreakable/.env}
+      # Geen KC_BOOTSTRAP_ADMIN_*: de eerste admin is verwijderd (Y3). Keycloak gebruikt die
+      # variabelen enkel bij het aanmaken van een lege master-realm. Na een volledige reset
+      # van de Keycloak-database (down -v) moeten ze tijdelijk weer worden toegevoegd.
     # Geen ports. Enkel via BunkerWeb (edge) en de eigen DB (iam).
     expose:
       - "8080"
