@@ -64,13 +64,21 @@ services:
       # Publieke URL achter BunkerWeb (pad /auth op de app-hostnaam); TLS eindigt bij de WAF.
       KC_HOSTNAME: "https://${APP_DOMAIN:?APP_DOMAIN ontbreekt in /etc/unbreakable/.env}/auth"
       KC_HTTP_RELATIVE_PATH: /auth
+      # Admin-console via SSH-tunnel (http://localhost:8081/auth/admin/). Let op: Keycloak raadt zelf aan
+      # de admin-endpoints niet publiek bloot te stellen. KC_HOSTNAME_ADMIN is achter een reverse
+      # proxy gevoelig (blanco pagina/redirect-lus mogelijk): eerst via de tunnel testen en
+      # pas daarna de publieke paden in BunkerWeb blokkeren.
+      KC_HOSTNAME_ADMIN: "http://localhost:8081/auth"
       KC_PROXY_HEADERS: xforwarded
       KC_HTTP_ENABLED: "true"
       KC_HEALTH_ENABLED: "true"
       # Geen KC_BOOTSTRAP_ADMIN_*: de eerste admin is verwijderd (Y3). Keycloak gebruikt die
       # variabelen enkel bij het aanmaken van een lege master-realm. Na een volledige reset
       # van de Keycloak-database (down -v) moeten ze tijdelijk weer worden toegevoegd.
-    # Geen ports. Enkel via BunkerWeb (edge) en de eigen DB (iam).
+    # Publiek enkel via BunkerWeb (edge). Daarnaast ENKEL op loopback van de server, voor beheer
+    # via SSH-tunnel (ssh -L 8081:127.0.0.1:8081 ...). Niet van buiten bereikbaar.
+    ports:
+      - "127.0.0.1:8081:8080/tcp"
     expose:
       - "8080"
     depends_on:
