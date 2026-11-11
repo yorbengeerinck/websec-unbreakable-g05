@@ -153,7 +153,7 @@ public sealed class ApiTests : IClassFixture<ApiFactory>
         Assert.Equal(HttpStatusCode.NotFound, (await SendAsync(HttpMethod.Delete, $"/api/messages/{id}", TokenFor(Jalil))).StatusCode); // T9
         Assert.Equal(HttpStatusCode.NotFound, (await SendAsync(HttpMethod.Delete, $"/api/messages/{id}", TokenFor(Pros))).StatusCode);  // T12
         Assert.Equal(HttpStatusCode.NoContent, (await SendAsync(HttpMethod.Delete, $"/api/messages/{id}", TokenFor(Yorben))).StatusCode); // T10
-        Assert.Empty(_factory.Pdp.Tuples.Where(t => t.Id == id));
+        Assert.DoesNotContain(_factory.Pdp.Tuples, t => t.Id == id);
         Assert.Equal(HttpStatusCode.NotFound, (await SendAsync(HttpMethod.Get, $"/api/messages/{id}", TokenFor(Jalil))).StatusCode); // T11
     }
 
@@ -171,7 +171,8 @@ public sealed class ApiTests : IClassFixture<ApiFactory>
 
         var export = await SendAsync(HttpMethod.Get, "/api/messages/export", TokenFor(Jalil));
         using var json = JsonDocument.Parse(await export.Content.ReadAsStringAsync());
-        Assert.Equal(new[] { toJalil }, json.RootElement.EnumerateArray().Select(e => e.GetProperty("id").GetInt32()).ToArray()); // T19
+        // De export gebruikt dezelfde serialisatie als het legacy-pad (PascalCase: "Id").
+        Assert.Equal(new[] { toJalil }, json.RootElement.EnumerateArray().Select(e => e.GetProperty("Id").GetInt32()).ToArray()); // T19
     }
 
     [PgFact]

@@ -50,6 +50,13 @@ var app = builder.Build();
 // Moet als eerste middleware: daarna ziet de app het echte client-IP en schema.
 app.UseForwardedHeaders();
 
+// Moet vóór de 503-middleware hieronder staan: anders vangt deze pagina de PdpUnavailableException
+// eerst op en wordt het een 500 in plaats van een 503.
+if (app.Environment.IsDevelopment())
+{
+    app.UseDeveloperExceptionPage();
+}
+
 // Security headers. CSP staat op Report-Only tot de SPA volledig CSP-clean is;
 // de rest wordt meteen afgedwongen.
 app.Use(async (context, next) =>
@@ -125,11 +132,6 @@ using (var scope = app.Services.CreateScope())
             Thread.Sleep(2000);
         }
     }
-}
-
-if (app.Environment.IsDevelopment())
-{
-    app.UseDeveloperExceptionPage();
 }
 
 // De SPA: index.html, JavaScript en CSS uit wwwroot.
