@@ -206,12 +206,6 @@ services:
       # en loginpagina laden tientallen scripts/assets tegelijk -> 429. Ruimer, maar nog begrensd.
       # Strengere limieten per endpoint (token, POST /api/messages) volgen in Y8/J3.
       LIMIT_REQ_RATE: "10r/s"
-      # CRS-false-positive: Keycloaks rolbeschrijving "${role_admin}" (vertaalsleutel) lijkt op een
-      # shell/PHP-expressie (regels 932130 en 933135, samen score 10 -> 403 bij het toewijzen
-      # van de admin-rol). Enkel die twee regels, enkel op de description-velden in de JSON,
-      # enkel op de Keycloak-admin-API. De rest van de WAF blijft volledig actief.
-      CUSTOM_CONF_MODSEC_CRS_keycloak_exclusions: |
-        SecRule REQUEST_URI "@beginsWith /auth/admin/" "id:1000001,phase:1,pass,nolog,ctl:ruleRemoveTargetById=932130;ARGS:/^json.*description/,ctl:ruleRemoveTargetById=933135;ARGS:/^json.*description/"
       USE_REVERSE_PROXY: "yes"
       REVERSE_PROXY_URL: "/"
       REVERSE_PROXY_HOST: "http://app:8080"
