@@ -1,0 +1,11 @@
+model
+  schema 1.1
+
+type user
+
+type message
+  relations
+    define sender: [user]
+    define recipient: [user]
+    define can_read: recipient
+    define can_delete: sender

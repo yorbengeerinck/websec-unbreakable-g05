@@ -74,8 +74,36 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITLEAKS_CONFIG: .gitleaks.toml
 
+  backend-tests:
+    # Y7/Y8: integratietests op API-niveau (JWT met een eigen testsleutel, stand-in voor OpenFGA)
+    # tegen een echte Postgres. Echte OpenFGA-tests volgen apart.
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: ci-test-only
+          POSTGRES_DB: unbreakable_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.3.0
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Backend tests
+        env:
+          TEST_CONNECTIONSTRING: Host=localhost;Port=5432;Database=unbreakable_test;Username=postgres;Password=ci-test-only
+        run: dotnet test ./tests/Unbreakable.Tests/Unbreakable.Tests.csproj --configuration Release
+
   deploy:
-    needs: [sca-dotnet, sast-semgrep, secret-gitleaks]
+    needs: [sca-dotnet, sast-semgrep, secret-gitleaks, backend-tests]
     if: github.repository == 'yorbengeerinck/websec-unbreakable-g05' && github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: [self-hosted, linux, g05]
     steps:

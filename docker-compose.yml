@@ -11,6 +11,9 @@ services:
       Oidc__MetadataAddress: "http://keycloak:8080/auth/realms/unbreakable/.well-known/openid-configuration"
       Oidc__Issuer: "https://${APP_DOMAIN:?APP_DOMAIN ontbreekt in /etc/unbreakable/.env}/auth/realms/unbreakable"
       Oidc__Audience: "unbreakable-api"
+      # TIJDELIJK (overgangsschakelaar, plan §8.4): legacy = X-User (huidig gedrag), oidc = JWT + OpenFGA.
+      # Zet AUTH_MODE=oidc in /etc/unbreakable/.env om over te schakelen; verwijderd in de opruim-PR.
+      Auth__Mode: "${AUTH_MODE:-legacy}"
       # OpenFGA (PDP). Store- en model-ID komen uit deploy/openfga/bootstrap.sh (Y4).
       OpenFga__ApiUrl: "http://openfga:8080"
       OpenFga__ApiToken: "${OPENFGA_API_TOKEN:-}"
@@ -69,6 +72,10 @@ services:
       # proxy gevoelig (blanco pagina/redirect-lus mogelijk): eerst via de tunnel testen en
       # pas daarna de publieke paden in BunkerWeb blokkeren.
       KC_HOSTNAME_ADMIN: "http://localhost:8081/auth"
+      # Backchannel dynamisch: de discovery die de app intern via http://keycloak:8080 ophaalt,
+      # wijst dan ook intern naar jwks_uri en token_endpoint (anders via de publieke URL en de WAF).
+      # De issuer blijft de vaste publieke URL uit KC_HOSTNAME.
+      KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
       KC_PROXY_HEADERS: xforwarded
       KC_HTTP_ENABLED: "true"
       KC_HEALTH_ENABLED: "true"

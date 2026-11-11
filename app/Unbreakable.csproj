@@ -10,6 +10,9 @@
 
   <ItemGroup>
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.*" />
+    <!-- Opdracht 4: JWT-validatie (Y5) en OpenFGA-SDK (Y7), exacte versies gepind. -->
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.11" />
+    <PackageReference Include="OpenFga.Sdk" Version="0.10.4" />
   </ItemGroup>
 
 </Project>

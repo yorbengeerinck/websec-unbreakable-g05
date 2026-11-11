@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using System.Text.Json.Serialization;
 
 namespace Unbreakable.Models;
 
@@ -38,4 +39,15 @@ public class Message
     [StringLength(64)]
     [Display(Name = "HMAC")]
     public string Mac { get; set; }
+
+    // Opdracht 4: de onveranderlijke Keycloak-identiteit (claim "sub") van afzender en ontvanger.
+    // Dit is de sleutel voor de autorisatie (OpenFGA). Sender/Recipient hierboven zijn enkel een
+    // weergave-snapshot. [JsonIgnore]: nooit binnenkomen van een client en nooit teruggeven.
+    [JsonIgnore]
+    [StringLength(100)]
+    public string SenderSub { get; set; }
+
+    [JsonIgnore]
+    [StringLength(100)]
+    public string RecipientSub { get; set; }
 }
