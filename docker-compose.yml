@@ -198,6 +198,10 @@ services:
       AUTO_LETS_ENCRYPT: "yes"
       DISABLE_DEFAULT_SERVER: "yes"
       SERVE_FILES: "no"
+      # BunkerWeb laat standaard enkel GET|POST|HEAD|OPTIONS toe (405 op de rest, en elke 405
+      # telt mee voor "bad behavior"). De Keycloak-admin-console gebruikt PUT/DELETE en de
+      # app heeft DELETE /api/messages/{id}; PATCH hoort bij gewone REST-updates.
+      ALLOWED_METHODS: "GET|POST|HEAD|OPTIONS|PUT|PATCH|DELETE"
       USE_REVERSE_PROXY: "yes"
       REVERSE_PROXY_URL: "/"
       REVERSE_PROXY_HOST: "http://app:8080"
