@@ -214,6 +214,10 @@ services:
       # en loginpagina laden tientallen scripts/assets tegelijk -> 429. Ruimer, maar nog begrensd.
       # Strengere limieten per endpoint (token, POST /api/messages) volgen in Y8/J3.
       LIMIT_REQ_RATE: "10r/s"
+      # Keycloak-admin-console en admin-API niet publiek: beheer enkel via SSH-tunnel
+      # (127.0.0.1:8081). BLACKLIST_URI is een lijst PCRE-regexen. Enkel /auth/admin;
+      # de master-realm staat op de tunnel-URL (frontendUrl), de app-realm blijft publiek.
+      BLACKLIST_URI: "^/auth/admin"
       USE_REVERSE_PROXY: "yes"
       REVERSE_PROXY_URL: "/"
       REVERSE_PROXY_HOST: "http://app:8080"
