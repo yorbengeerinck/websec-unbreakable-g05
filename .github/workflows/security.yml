@@ -102,8 +102,54 @@ jobs:
           TEST_CONNECTIONSTRING: Host=localhost;Port=5432;Database=unbreakable_test;Username=postgres;Password=ci-test-only
         run: dotnet test ./tests/Unbreakable.Tests/Unbreakable.Tests.csproj --configuration Release
 
+  openfga-model:
+    # Y8: het autorisatiemodel (plan 4.4) moet geldig zijn; de modeltests van Pros (model.fga.yaml)
+    # draaien automatisch zodra dat bestand bestaat.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.3.0
+
+      - name: Model valideren
+        run: |
+          docker run --rm -v "$PWD/deploy/openfga:/m:ro" openfga/cli@sha256:31a565d14d1c5ca8170d3a2225eb66517d9f490539967bcb3421613c5e2538a4 \
+            model validate --file /m/model.fga
+
+      - name: Modeltests (indien model.fga.yaml aanwezig)
+        run: |
+          if [ -f deploy/openfga/model.fga.yaml ]; then
+            docker run --rm -v "$PWD/deploy/openfga:/m:ro" openfga/cli@sha256:31a565d14d1c5ca8170d3a2225eb66517d9f490539967bcb3421613c5e2538a4 \
+              model test --tests /m/model.fga.yaml
+          else
+            echo "deploy/openfga/model.fga.yaml ontbreekt nog (P2, Pros): enkel validatie uitgevoerd."
+          fi
+
+  compose-validate:
+    # Y8: de compose-file moet geldig zijn en de app-image moet bouwen vóór er gedeployed wordt.
+    # Dummy-waarden, enkel voor de validatie; echte geheimen staan alleen in /etc/unbreakable/.env.
+    runs-on: ubuntu-latest
+    env:
+      APP_DOMAIN: ci.example.test
+      DB_PASSWORD: ci-only
+      KC_DB_PASSWORD: ci-only
+      OPENFGA_DB_PASSWORD: ci-only
+      OPENFGA_API_TOKEN: ci-only
+      BW_DB_PASSWORD: ci-only
+      BW_UI_ADMIN_PASSWORD: ci-only
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.3.0
+
+      - name: docker compose config
+        run: docker compose config --quiet
+
+      - name: App-image bouwen
+        run: docker compose build app
+
   deploy:
-    needs: [sca-dotnet, sast-semgrep, secret-gitleaks, backend-tests]
+    needs: [sca-dotnet, sast-semgrep, secret-gitleaks, backend-tests, openfga-model, compose-validate]
+    # Twee deploys tegelijk zouden elkaars compose-run overlappen: wachten, niet annuleren.
+    concurrency:
+      group: deploy-g05
+      cancel-in-progress: false
     if: github.repository == 'yorbengeerinck/websec-unbreakable-g05' && github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: [self-hosted, linux, g05]
     steps:
@@ -121,3 +167,25 @@ jobs:
           done
           docker compose --env-file /etc/unbreakable/.env logs --tail 50 bunkerweb
           exit 1
+
+      - name: Smoke-test via WAF en poortcontrole
+        run: |
+          base=https://g05.ipv6.thelastgym.be
+          fail=0
+          check() {
+            code=$(curl -s -o /dev/null -w '%{http_code}' "$3" || true)
+            if [ "$code" = "$2" ]; then echo "OK   $1 ($code)"; else echo "FAIL $1: verwacht $2, kreeg $code"; fail=1; fi
+          }
+          check "health" 200 "$base/health"
+          check "api zonder token/identiteit" 401 "$base/api/messages"
+          check "keycloak discovery (master) bereikbaar" 200 "$base/auth/realms/master/.well-known/openid-configuration"
+          check "keycloak admin publiek geblokkeerd" 403 "$base/auth/admin/"
+          ports=$(docker compose --env-file /etc/unbreakable/.env ps --format '{{.Ports}}' \
+            | grep -oE '(0\.0\.0\.0|\[::\]):[0-9]+' | sed -E 's/.*://' | sort -u | tr '\n' ' ')
+          echo "publiek gepubliceerde poorten: $ports"
+          extra=$(echo "$ports" | tr ' ' '\n' | grep -vE '^(80|443)?$' || true)
+          if [ -n "$extra" ]; then
+            echo "FAIL extra publiek gepubliceerde poorten: $extra"
+            fail=1
+          fi
+          exit $fail
