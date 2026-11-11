@@ -183,7 +183,9 @@ jobs:
           ports=$(docker compose --env-file /etc/unbreakable/.env ps --format '{{.Ports}}' \
             | grep -oE '(0\.0\.0\.0|\[::\]):[0-9]+' | sed -E 's/.*://' | sort -u | tr '\n' ' ')
           echo "publiek gepubliceerde poorten: $ports"
-          for p in $ports; do
-            case "$p" in 80|443) ;; *) echo "FAIL poort $p is publiek gepubliceerd"; fail=1;; esac
-          done
+          extra=$(echo "$ports" | tr ' ' '\n' | grep -vE '^(80|443)?$' || true)
+          if [ -n "$extra" ]; then
+            echo "FAIL extra publiek gepubliceerde poorten: $extra"
+            fail=1
+          fi
           exit $fail
