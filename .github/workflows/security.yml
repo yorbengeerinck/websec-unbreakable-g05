@@ -178,7 +178,15 @@ jobs:
           }
           check "health" 200 "$base/health"
           check "api zonder token/identiteit" 401 "$base/api/messages"
-          check "keycloak discovery (master) bereikbaar" 200 "$base/auth/realms/master/.well-known/openid-configuration"
+          check "app-realm unbreakable: discovery bereikbaar" 200 "$base/auth/realms/unbreakable/.well-known/openid-configuration"
+          check "admin-realm master niet publiek" 403 "$base/auth/realms/master/.well-known/openid-configuration"
+          issuer=$(curl -s "$base/auth/realms/unbreakable/.well-known/openid-configuration" | grep -o '"issuer":"[^"]*"' || true)
+          if [ "$issuer" = "\"issuer\":\"$base/auth/realms/unbreakable\"" ]; then
+            echo "OK   issuer van unbreakable is publiek: $issuer"
+          else
+            echo "FAIL issuer van unbreakable klopt niet: $issuer"
+            fail=1
+          fi
           check "keycloak admin publiek geblokkeerd" 403 "$base/auth/admin/"
           ports=$(docker compose --env-file /etc/unbreakable/.env ps --format '{{.Ports}}' \
             | grep -oE '(0\.0\.0\.0|\[::\]):[0-9]+' | sed -E 's/.*://' | sort -u | tr '\n' ' ')
