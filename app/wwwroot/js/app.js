@@ -1,6 +1,6 @@
 // De schermen van Unbreakable. Navigeren gebeurt met het deel na # in de URL.
 
-import { api, currentUser, setUser } from './api.js';
+import { api, currentUser, setUser, loadMode, authMode, useOidc, logout } from './api.js';
 import { encrypt, decrypt, sign, verify, LINE_LENGTH } from './crypto.js';
 
 const app = document.getElementById('app');
@@ -22,7 +22,23 @@ function formatDate(value) {
 
 function showWho() {
     const user = currentUser();
-    document.getElementById('who').innerHTML = user
+    const who = document.getElementById('who');
+
+    if (authMode() === 'oidc') {
+        who.innerHTML = user
+            ? `Je bent <strong>${escapeHtml(user)}</strong> (<a href="#" id="logout">uitloggen</a>)`
+            : '';
+        const link = document.getElementById('logout');
+        if (link) {
+            link.addEventListener('click', (event) => {
+                event.preventDefault();
+                logout();
+            });
+        }
+        return;
+    }
+
+    who.innerHTML = user
         ? `Je bent <strong>${escapeHtml(user)}</strong> (<a href="#/">wisselen</a>)`
         : '';
 }
@@ -89,6 +105,9 @@ async function renderInbox(params) {
                 <div class="col-auto">
                     <label for="q">Zoeken</label>
                     <input id="q" class="form-control" value="${escapeHtml(q)}" />
+                    ${authMode() === 'oidc'
+                        ? '<small class="form-text text-muted">Zoekt op afzender. De inhoud is versleuteld en wordt alleen lokaal in je browser ontsleuteld.</small>'
+                        : ''}
                 </div>
                 <div class="col-auto">
                     <button type="submit" class="btn btn-secondary">Filter</button>
@@ -210,8 +229,14 @@ async function renderMessage(id) {
 
     document.getElementById('delete').addEventListener('click', async () => {
         if (confirm('Ben je zeker dat je dit bericht wil verwijderen?')) {
-            await api.remove(id);
-            location.hash = '#/inbox';
+            try {
+                await api.remove(id);
+                location.hash = '#/inbox';
+            } catch (e) {
+                show('danger', e.message.includes(' 404')
+                    ? 'Verwijderen lukt niet. Alleen de afzender kan een bericht verwijderen.'
+                    : e.message);
+            }
         }
     });
 }
@@ -264,9 +289,14 @@ async function renderNew() {
         error.className = '';
         error.textContent = '';
         try {
+            const recipient = document.getElementById('recipient').value.trim();
+            // De MAC dekt de ontvangersnaam. Die moet dus exact overeenkomen met de naam die de server kent.
+            if (authMode() === 'oidc' && !users.includes(recipient)) {
+                throw new Error('Onbekende ontvanger. Kies een naam uit de lijst (let op kleine letters).');
+            }
             const message = {
-                sender: currentUser(),
-                recipient: document.getElementById('recipient').value.trim(),
+                sender: currentUser(), // enkel invoer voor de MAC; in oidc-modus zet de server de afzender uit het token
+                recipient,
                 subject: 'Versleuteld bericht',
                 keyLine: Number(document.getElementById('keyline').value),
             };
@@ -305,12 +335,21 @@ async function route() {
 
     try {
         if (path === '/' || path === '') {
+            if (authMode() === 'oidc') {
+                location.hash = '#/inbox'; // er is geen naamkeuze meer, je bent al ingelogd
+                return;
+            }
             return renderLogin();
         }
         if (path === '/over') {
             return renderAbout();
         }
         if (!currentUser()) {
+            if (authMode() === 'oidc') {
+                // Geen lus naar '#/': het token heeft geen gebruikersnaam.
+                app.innerHTML = '<div class="alert alert-danger">Je bent ingelogd, maar het token bevat geen gebruikersnaam.</div>';
+                return;
+            }
             location.hash = '#/';
             return;
         }
@@ -330,5 +369,27 @@ async function route() {
     }
 }
 
-window.addEventListener('hashchange', route);
-route();
+// ------------------------------------------------------------------ opstarten
+
+// Eerst de modus ophalen. In oidc-modus laden we auth.js pas hier, zodat de legacy-modus
+// keycloak-js nooit laadt. initAuth() stuurt je naar Keycloak als je niet ingelogd bent
+// en verwerkt de terugkeer (code in het #-deel van de URL) voor de routing begint.
+async function start() {
+    try {
+        const mode = await loadMode();
+        if (mode === 'oidc') {
+            const auth = await import('./auth.js');
+            await auth.initAuth();
+            useOidc(auth);
+        }
+    } catch (error) {
+        // Fail closed: bij een fout tonen we niets van de app.
+        app.innerHTML = `<div class="alert alert-danger">Inloggen is mislukt: ${escapeHtml(error.message)}</div>`;
+        return;
+    }
+
+    window.addEventListener('hashchange', route);
+    await route();
+}
+
+start();
