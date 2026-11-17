@@ -89,13 +89,23 @@ if (authSettings.IsOidc)
     // Fail closed: een onbereikbare of falende OpenFGA geeft 503 en nooit data.
     app.Use(async (context, next) =>
     {
+        var started = System.Diagnostics.Stopwatch.GetTimestamp();
         try
         {
             await next();
         }
         catch (PdpUnavailableException ex)
         {
-            app.Logger.LogError(ex, "Autorisatieservice (OpenFGA) niet bereikbaar of foutief; verzoek geweigerd.");
+            // Auditregel voor het foutgeval: er is geen beslissing, dus decision=error en nooit data.
+            // Actie = HTTP-methode + routepatroon (geen ruwe URL, dus geen door de client bepaalde tekst in het log).
+            var route = (context.GetEndpoint() as RouteEndpoint)?.RoutePattern.RawText ?? "onbekend";
+            app.Logger.LogError(ex,
+                "authz action={Action} sub={Sub} message=(null) decision=error count=(null) model_id={ModelId} latency_ms={LatencyMs} correlation_id={CorrelationId}",
+                $"{context.Request.Method} {route}",
+                context.User.FindFirst("sub")?.Value ?? string.Empty,
+                app.Configuration["OpenFga:ModelId"] ?? string.Empty,
+                (long)System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds,
+                context.TraceIdentifier);
             if (!context.Response.HasStarted)
             {
                 context.Response.Clear();

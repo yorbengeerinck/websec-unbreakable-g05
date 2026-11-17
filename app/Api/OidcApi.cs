@@ -16,6 +16,7 @@ public sealed record CreateMessageRequest(string Recipient, int? KeyLine, string
 public static class OidcApi
 {
     private const string Subject = "Versleuteld bericht";
+    private const string StartKey = "authz.start";
 
     public static void MapOidcApi(this WebApplication app)
     {
@@ -25,6 +26,7 @@ public static class OidcApi
         api.AddEndpointFilter(async (context, next) =>
         {
             var http = context.HttpContext;
+            http.Items[StartKey] = System.Diagnostics.Stopwatch.GetTimestamp();
             var sub = Sub(http);
             var username = Username(http);
             if (string.IsNullOrWhiteSpace(sub) || string.IsNullOrWhiteSpace(username) || username.Length > 40)
@@ -52,7 +54,7 @@ public static class OidcApi
             ILogger<Program> log, CancellationToken ct) =>
         {
             var ids = await pdp.ReadableMessageIdsAsync(Sub(http), ct);
-            Audit(log, "list", Sub(http), null, "allow", ids.Count);
+            Audit(http, log, "list", Sub(http), null, "allow", ids.Count);
 
             var inbox = Readable(db, ids);
             var from = http.Request.Query["from"].ToString();
@@ -76,7 +78,7 @@ public static class OidcApi
             }
 
             var ids = await pdp.ReadableMessageIdsAsync(Sub(http), ct);
-            Audit(log, "search", Sub(http), null, "allow", ids.Count);
+            Audit(http, log, "search", Sub(http), null, "allow", ids.Count);
 
             var inbox = Readable(db, ids);
             if (q.Length > 0)
@@ -111,7 +113,7 @@ public static class OidcApi
             ILogger<Program> log, CancellationToken ct) =>
         {
             var ids = await pdp.ReadableMessageIdsAsync(Sub(http), ct);
-            Audit(log, "export", Sub(http), null, "allow", ids.Count);
+            Audit(http, log, "export", Sub(http), null, "allow", ids.Count);
 
             var messages = await Readable(db, ids).OrderBy(m => m.SentAt).ToListAsync(ct);
             var json = JsonSerializer.Serialize(messages, new JsonSerializerOptions { WriteIndented = true });
@@ -122,7 +124,7 @@ public static class OidcApi
             IMessageAuthorizer pdp, ILogger<Program> log, CancellationToken ct) =>
         {
             var allowed = await pdp.CanReadAsync(Sub(http), id, ct);
-            Audit(log, "read", Sub(http), id, allowed ? "allow" : "deny");
+            Audit(http, log, "read", Sub(http), id, allowed ? "allow" : "deny");
             if (!allowed)
             {
                 // Geen onderscheid tussen "bestaat niet" en "mag niet".
@@ -197,11 +199,11 @@ public static class OidcApi
                     log.LogError(ex, "Weesrij: bericht {MessageId} kon niet worden teruggedraaid na een tuple-fout.", message.Id);
                 }
 
-                Audit(log, "create", senderSub, message.Id, "error");
+                Audit(http, log, "create", senderSub, message.Id, "error");
                 throw;
             }
 
-            Audit(log, "create", senderSub, message.Id, "allow");
+            Audit(http, log, "create", senderSub, message.Id, "allow");
             return Results.Created($"/api/messages/{message.Id}", message);
         }).RequireRateLimiting(OidcRateLimiting.PostPolicy);
 
@@ -209,7 +211,7 @@ public static class OidcApi
             IMessageAuthorizer pdp, ILogger<Program> log, CancellationToken ct) =>
         {
             var allowed = await pdp.CanDeleteAsync(Sub(http), id, ct);
-            Audit(log, "delete", Sub(http), id, allowed ? "allow" : "deny");
+            Audit(http, log, "delete", Sub(http), id, allowed ? "allow" : "deny");
             if (!allowed)
             {
                 return Results.NotFound();
@@ -252,10 +254,16 @@ public static class OidcApi
 
     private static string Username(HttpContext http) => http.User.FindFirst("preferred_username")?.Value ?? string.Empty;
 
-    // Audit: tijd (door de logger), sub, actie, object, beslissing. Nooit body, ciphertext of token.
-    private static void Audit(ILogger log, string action, string sub, int? messageId, string decision, int? count = null)
+    // Audit: tijd (door de logger), sub, actie, object, beslissing, model-ID, latency en correlation-ID.
+    // Nooit body, ciphertext of token. Ook de foutgevallen worden gelogd (zie de 503-middleware in Program.cs).
+    private static void Audit(HttpContext http, ILogger log, string action, string sub, int? messageId, string decision, int? count = null)
     {
-        log.LogInformation("authz action={Action} sub={Sub} message={MessageId} decision={Decision} count={Count}",
-            action, sub, messageId, decision, count);
+        var modelId = http.RequestServices.GetService<IConfiguration>()?["OpenFga:ModelId"] ?? string.Empty;
+        var latencyMs = http.Items.TryGetValue(StartKey, out var start) && start is long ticks
+            ? (long)System.Diagnostics.Stopwatch.GetElapsedTime(ticks).TotalMilliseconds
+            : -1;
+        log.LogInformation(
+            "authz action={Action} sub={Sub} message={MessageId} decision={Decision} count={Count} model_id={ModelId} latency_ms={LatencyMs} correlation_id={CorrelationId}",
+            action, sub, messageId, decision, count, modelId, latencyMs, http.TraceIdentifier);
     }
 }
