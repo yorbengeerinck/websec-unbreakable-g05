@@ -253,15 +253,6 @@ public sealed class ApiTests : IClassFixture<ApiFactory>
         Assert.Equal(new[] { id }, await InboxIdsAsync(Jalil));
     }
 
-    [PgFact]
-    public async Task Config_IsPublic_AndReportsOidc()
-    {
-        var response = await SendAsync(HttpMethod.Get, "/api/config", null);
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        Assert.Equal("oidc", json.RootElement.GetProperty("authMode").GetString());
-    }
-
     // T36: geen autorisatievergelijkingen in de API-code.
     [Fact]
     public void T36_NoAuthorizationComparisonsInApi()

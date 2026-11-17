@@ -162,7 +162,6 @@ public sealed class ApiFactory : WebApplicationFactory<Program>
         // Omgevingsvariabelen zijn de betrouwbaarste manier om Program-instellingen te zetten
         // (Program leest de configuratie meteen bij het opbouwen).
         Environment.SetEnvironmentVariable("ConnectionStrings__Unbreakable", Environment.GetEnvironmentVariable("TEST_CONNECTIONSTRING"));
-        Environment.SetEnvironmentVariable("Auth__Mode", "oidc");
         Environment.SetEnvironmentVariable("Oidc__MetadataAddress", "http://127.0.0.1:1/niet-gebruikt");
         Environment.SetEnvironmentVariable("Oidc__Issuer", Tokens.Issuer);
         Environment.SetEnvironmentVariable("Oidc__Audience", Tokens.Audience);
