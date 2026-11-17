@@ -78,7 +78,7 @@ public static class OidcSetup
         {
             // Fail closed: zonder volledige configuratie start de app niet in oidc-modus.
             throw new InvalidOperationException(
-                $"{key.Replace(':', '_')} ontbreekt (Auth__Mode=oidc vereist dit). Zet het in /etc/unbreakable/.env.");
+                $"{key.Replace(':', '_')} ontbreekt (de app vereist dit). Zet het in /etc/unbreakable/.env.");
         }
 
         return value;

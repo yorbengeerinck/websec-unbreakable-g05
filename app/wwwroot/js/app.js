@@ -1,6 +1,6 @@
 // De schermen van Unbreakable. Navigeren gebeurt met het deel na # in de URL.
 
-import { api, currentUser, setUser, loadMode, authMode, useOidc, logout } from './api.js';
+import { api, currentUser, useOidc, logout } from './api.js';
 import { encrypt, decrypt, sign, verify, LINE_LENGTH } from './crypto.js';
 
 const app = document.getElementById('app');
@@ -24,55 +24,16 @@ function showWho() {
     const user = currentUser();
     const who = document.getElementById('who');
 
-    if (authMode() === 'oidc') {
-        who.innerHTML = user
-            ? `Je bent <strong>${escapeHtml(user)}</strong> (<a href="#" id="logout">uitloggen</a>)`
-            : '';
-        const link = document.getElementById('logout');
-        if (link) {
-            link.addEventListener('click', (event) => {
-                event.preventDefault();
-                logout();
-            });
-        }
-        return;
-    }
-
     who.innerHTML = user
-        ? `Je bent <strong>${escapeHtml(user)}</strong> (<a href="#/">wisselen</a>)`
+        ? `Je bent <strong>${escapeHtml(user)}</strong> (<a href="#" id="logout">uitloggen</a>)`
         : '';
-}
-
-// ------------------------------------------------------------------ naam kiezen
-
-function renderLogin() {
-    const user = currentUser();
-    app.innerHTML = `
-        <div class="text-center mb-5">
-            <h1 class="display-4">Unbreakable</h1>
-            <p class="lead">Berichten die niemand anders kan lezen. Dat is toch de bedoeling.</p>
-        </div>
-        <div class="row justify-content-center">
-            <div class="col-md-5">
-                ${user ? `<p>Je gebruikt Unbreakable als <strong>${escapeHtml(user)}</strong>.
-                          <a href="#/inbox">Naar je inbox</a></p>
-                          <p>Iemand anders? Vul hieronder een andere naam in.</p>` : ''}
-                <form id="login">
-                    <div class="form-group">
-                        <label for="name">Wie ben je?</label>
-                        <input id="name" class="form-control" placeholder="bijvoorbeeld Anna"
-                               required minlength="2" maxlength="40" />
-                    </div>
-                    <button type="submit" class="btn btn-primary">Verder</button>
-                </form>
-            </div>
-        </div>`;
-
-    document.getElementById('login').addEventListener('submit', (event) => {
-        event.preventDefault();
-        setUser(document.getElementById('name').value.trim());
-        location.hash = '#/inbox';
-    });
+    const link = document.getElementById('logout');
+    if (link) {
+        link.addEventListener('click', (event) => {
+            event.preventDefault();
+            logout();
+        });
+    }
 }
 
 // ------------------------------------------------------------------ inbox
@@ -105,9 +66,7 @@ async function renderInbox(params) {
                 <div class="col-auto">
                     <label for="q">Zoeken</label>
                     <input id="q" class="form-control" value="${escapeHtml(q)}" />
-                    ${authMode() === 'oidc'
-                        ? '<small class="form-text text-muted">Zoekt op afzender. De inhoud is versleuteld en wordt alleen lokaal in je browser ontsleuteld.</small>'
-                        : ''}
+                    <small class="form-text text-muted">Zoekt op afzender. De inhoud is versleuteld en wordt alleen lokaal in je browser ontsleuteld.</small>
                 </div>
                 <div class="col-auto">
                     <button type="submit" class="btn btn-secondary">Filter</button>
@@ -291,7 +250,7 @@ async function renderNew() {
         try {
             const recipient = document.getElementById('recipient').value.trim();
             // De MAC dekt de ontvangersnaam. Die moet dus exact overeenkomen met de naam die de server kent.
-            if (authMode() === 'oidc' && !users.includes(recipient)) {
+            if (!users.includes(recipient)) {
                 throw new Error('Onbekende ontvanger. Kies een naam uit de lijst (let op kleine letters).');
             }
             const message = {
@@ -335,22 +294,15 @@ async function route() {
 
     try {
         if (path === '/' || path === '') {
-            if (authMode() === 'oidc') {
-                location.hash = '#/inbox'; // er is geen naamkeuze meer, je bent al ingelogd
-                return;
-            }
-            return renderLogin();
+            location.hash = '#/inbox'; // er is geen naamkeuze meer, je bent al ingelogd
+            return;
         }
         if (path === '/over') {
             return renderAbout();
         }
         if (!currentUser()) {
-            if (authMode() === 'oidc') {
-                // Geen lus naar '#/': het token heeft geen gebruikersnaam.
-                app.innerHTML = '<div class="alert alert-danger">Je bent ingelogd, maar het token bevat geen gebruikersnaam.</div>';
-                return;
-            }
-            location.hash = '#/';
+            // Geen lus naar '#/': het token heeft geen gebruikersnaam.
+            app.innerHTML = '<div class="alert alert-danger">Je bent ingelogd, maar het token bevat geen gebruikersnaam.</div>';
             return;
         }
         if (path === '/inbox') {
@@ -371,17 +323,13 @@ async function route() {
 
 // ------------------------------------------------------------------ opstarten
 
-// Eerst de modus ophalen. In oidc-modus laden we auth.js pas hier, zodat de legacy-modus
-// keycloak-js nooit laadt. initAuth() stuurt je naar Keycloak als je niet ingelogd bent
-// en verwerkt de terugkeer (code in het #-deel van de URL) voor de routing begint.
+// initAuth() stuurt je naar Keycloak als je niet ingelogd bent en verwerkt de terugkeer
+// (code in het #-deel van de URL) voor de routing begint.
 async function start() {
     try {
-        const mode = await loadMode();
-        if (mode === 'oidc') {
-            const auth = await import('./auth.js');
-            await auth.initAuth();
-            useOidc(auth);
-        }
+        const auth = await import('./auth.js');
+        await auth.initAuth();
+        useOidc(auth);
     } catch (error) {
         // Fail closed: bij een fout tonen we niets van de app.
         app.innerHTML = `<div class="alert alert-danger">Inloggen is mislukt: ${escapeHtml(error.message)}</div>`;

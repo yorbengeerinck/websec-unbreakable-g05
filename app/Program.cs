@@ -16,20 +16,13 @@ if (string.IsNullOrWhiteSpace(connectionString))
         "(/etc/unbreakable/.env), nooit in appsettings.json.");
 }
 
-// TIJDELIJK (overgangsschakelaar, plan §8.4): Auth__Mode = legacy (standaard) of oidc.
-var authSettings = AuthSettings.FromConfiguration(builder.Configuration);
-builder.Services.AddSingleton(authSettings);
-
 builder.Services.AddDbContext<UnbreakableContext>(options => options.UseNpgsql(connectionString));
 
-if (authSettings.IsOidc)
-{
-    // Y5: JWT-validatie. Y7: PEP + OpenFGA. Ontbrekende configuratie = de app start niet.
-    builder.Services.AddOidcApiAuthentication(builder.Configuration);
-    builder.Services.AddOpenFgaAuthorizer(builder.Configuration);
-    builder.Services.AddSingleton<UserDirectory>();
-    builder.Services.AddOidcRateLimiting();
-}
+// Y5: JWT-validatie. Y7: PEP + OpenFGA. Ontbrekende configuratie = de app start niet.
+builder.Services.AddOidcApiAuthentication(builder.Configuration);
+builder.Services.AddOpenFgaAuthorizer(builder.Configuration);
+builder.Services.AddSingleton<UserDirectory>();
+builder.Services.AddOidcRateLimiting();
 
 // Opdracht 4: geen CORS meer. De SPA wordt door dezelfde app geserveerd en is dus
 // same-origin; een cross-origin-beleid zou alleen maar extra aanvalsvlak toevoegen.
@@ -84,41 +77,38 @@ app.Use(async (context, next) =>
     await next();
 });
 
-if (authSettings.IsOidc)
+// Fail closed: een onbereikbare of falende OpenFGA geeft 503 en nooit data.
+app.Use(async (context, next) =>
 {
-    // Fail closed: een onbereikbare of falende OpenFGA geeft 503 en nooit data.
-    app.Use(async (context, next) =>
+    var started = System.Diagnostics.Stopwatch.GetTimestamp();
+    try
     {
-        var started = System.Diagnostics.Stopwatch.GetTimestamp();
-        try
+        await next();
+    }
+    catch (PdpUnavailableException ex)
+    {
+        // Auditregel voor het foutgeval: er is geen beslissing, dus decision=error en nooit data.
+        // Actie = HTTP-methode + routepatroon (geen ruwe URL, dus geen door de client bepaalde tekst in het log).
+        var route = (context.GetEndpoint() as RouteEndpoint)?.RoutePattern.RawText ?? "onbekend";
+        app.Logger.LogError(ex,
+            "authz action={Action} sub={Sub} message=(null) decision=error count=(null) model_id={ModelId} latency_ms={LatencyMs} correlation_id={CorrelationId}",
+            $"{context.Request.Method} {route}",
+            context.User.FindFirst("sub")?.Value ?? string.Empty,
+            app.Configuration["OpenFga:ModelId"] ?? string.Empty,
+            (long)System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds,
+            context.TraceIdentifier);
+        if (!context.Response.HasStarted)
         {
-            await next();
+            context.Response.Clear();
+            context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
+            await context.Response.WriteAsync("Autorisatieservice niet beschikbaar.");
         }
-        catch (PdpUnavailableException ex)
-        {
-            // Auditregel voor het foutgeval: er is geen beslissing, dus decision=error en nooit data.
-            // Actie = HTTP-methode + routepatroon (geen ruwe URL, dus geen door de client bepaalde tekst in het log).
-            var route = (context.GetEndpoint() as RouteEndpoint)?.RoutePattern.RawText ?? "onbekend";
-            app.Logger.LogError(ex,
-                "authz action={Action} sub={Sub} message=(null) decision=error count=(null) model_id={ModelId} latency_ms={LatencyMs} correlation_id={CorrelationId}",
-                $"{context.Request.Method} {route}",
-                context.User.FindFirst("sub")?.Value ?? string.Empty,
-                app.Configuration["OpenFga:ModelId"] ?? string.Empty,
-                (long)System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds,
-                context.TraceIdentifier);
-            if (!context.Response.HasStarted)
-            {
-                context.Response.Clear();
-                context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
-                await context.Response.WriteAsync("Autorisatieservice niet beschikbaar.");
-            }
-        }
-    });
+    }
+});
 
-    app.UseAuthentication();
-    app.UseAuthorization();
-    app.UseRateLimiter();
-}
+app.UseAuthentication();
+app.UseAuthorization();
+app.UseRateLimiter();
 
 // Databank aanmaken (opdracht 3: geen onversleutelde voorbeeldberichten meer).
 // De databank kan iets later opstarten dan de app, dus we proberen een paar keer.
@@ -150,17 +140,7 @@ app.UseStaticFiles();
 
 app.MapGet("/health", () => "ok");
 
-// TIJDELIJK (plan §8.4): vertelt de frontend welke modus actief is. Verdwijnt in de opruim-PR.
-app.MapGet("/api/config", (AuthSettings settings) => Results.Ok(new { authMode = settings.Mode }));
-
-if (authSettings.IsOidc)
-{
-    app.MapOidcApi();
-}
-else
-{
-    app.MapLegacyApi();
-}
+app.MapOidcApi();
 
 app.Run();
 
