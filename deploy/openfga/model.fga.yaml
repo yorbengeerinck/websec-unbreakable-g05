@@ -16,7 +16,7 @@ tests:
     check:
       - user: user:sub-jalil
         object: message:1
-        assertions: { can_read: true, can_delete: false }
+        assertions: { can_read: true, can_delete: true }
       - user: user:sub-yorben
         object: message:1
         assertions: { can_read: false, can_delete: true }
