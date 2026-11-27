@@ -1,0 +1,79 @@
+name: unbreakable-messages
+model_file: ./model.fga
+
+tuples:
+  - { user: user:sub-yorben, relation: sender,    object: message:1 }
+  - { user: user:sub-jalil,  relation: recipient, object: message:1 }
+  - { user: user:sub-pros,   relation: sender,    object: message:2 }
+  - { user: user:sub-yorben, relation: recipient, object: message:2 }
+  - { user: user:sub-jalil,  relation: sender,    object: message:3 }
+  - { user: user:sub-pros,   relation: recipient, object: message:3 }
+  - { user: user:sub-yorben, relation: sender,    object: message:4 }
+  - { user: user:sub-yorben, relation: recipient, object: message:4 }
+
+tests:
+  - name: ontvanger leest, afzender niet, derde niet
+    check:
+      - user: user:sub-jalil
+        object: message:1
+        assertions: { can_read: true, can_delete: false }
+      - user: user:sub-yorben
+        object: message:1
+        assertions: { can_read: false, can_delete: true }
+      - user: user:sub-pros
+        object: message:1
+        assertions: { can_read: false, can_delete: false }
+
+  - name: onbekende gebruiker heeft nergens toegang
+    check:
+      - user: user:sub-onbekend
+        object: message:1
+        assertions: { can_read: false, can_delete: false }
+
+  - name: bericht aan jezelf mag je lezen en verwijderen
+    check:
+      - user: user:sub-yorben
+        object: message:4
+        assertions: { can_read: true, can_delete: true }
+      - user: user:sub-jalil
+        object: message:4
+        assertions: { can_read: false, can_delete: false }
+
+  - name: bericht zonder tuples is voor niemand zichtbaar (fail closed)
+    check:
+      - user: user:sub-yorben
+        object: message:99
+        assertions: { can_read: false, can_delete: false }
+      - user: user:sub-jalil
+        object: message:99
+        assertions: { can_read: false, can_delete: false }
+      - user: user:sub-pros
+        object: message:99
+        assertions: { can_read: false, can_delete: false }
+
+  - name: inbox bevat enkel ontvangen berichten
+    list_objects:
+      - user: user:sub-yorben
+        type: message
+        assertions: { can_read: [message:2, message:4] }
+      - user: user:sub-jalil
+        type: message
+        assertions: { can_read: [message:1] }
+      - user: user:sub-pros
+        type: message
+        assertions: { can_read: [message:3] }
+      - user: user:sub-onbekend
+        type: message
+        assertions: { can_read: [] }
+
+  - name: afzender kan enkel eigen berichten verwijderen
+    list_objects:
+      - user: user:sub-yorben
+        type: message
+        assertions: { can_delete: [message:1, message:4] }
+      - user: user:sub-jalil
+        type: message
+        assertions: { can_delete: [message:3] }
+      - user: user:sub-pros
+        type: message
+        assertions: { can_delete: [message:2] }
