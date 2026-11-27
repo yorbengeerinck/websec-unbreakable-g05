@@ -1,0 +1,5 @@
+Jalil, 2026-11-15, Claude (Anthropic)
+- Keycloak: Claude schreef het bestand realm-unbreakable.json op basis van het plan (J1). Ik heb de realm zelf geïmporteerd, de 3 users aangemaakt en de discovery getest.
+- Documentatie: Claude schreef de README voor deploy/keycloak (J2). Ik heb die gecontroleerd en gecommit.
+- Review van PR #15: ik plakte het workflow-bestand in Claude en vroeg om een review. Claude somde op wat goed was en gaf drie opmerkingen. Ik heb het bestand zelf gelezen en daarna goedgekeurd.
+- Uitleg: Claude legde PKCE uit, en dat heb ik gebruikt om te begrijpen waarom S256 verplicht is.

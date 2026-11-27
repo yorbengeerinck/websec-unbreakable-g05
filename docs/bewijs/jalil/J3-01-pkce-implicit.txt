@@ -1,0 +1,3 @@
+== discovery
+== PKCE zonder code_challenge (verwacht fout)
+== implicit response_type=token (verwacht fout)
